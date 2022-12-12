@@ -417,9 +417,12 @@ acpi_resource_parse(device_t dev, ACPI_HANDLE handle, const char *path,
 	ACPI_STATUS rv;
 
 	ACPI_FUNCTION_TRACE(__func__);
-
-	if (ops->init)
+	printf(" ANTES DE ENTRAR NO IF(OPS->INIT)\n");
+	if (ops->init){
+		printf(" ENTROU NO IF(OPS->INIT)\n");
 		(*ops->init)(dev, arg, &cbarg.context);
+	}
+	
 	else
 		cbarg.context = arg;
 	cbarg.ops = ops;
@@ -434,8 +437,10 @@ acpi_resource_parse(device_t dev, ACPI_HANDLE handle, const char *path,
 		return_ACPI_STATUS(rv);
 	}
 
-	if (ops->fini)
+	if (ops->fini){
+		printf(" ENTROU NO IF(OPS->FINI)\n");
 		(*ops->fini)(dev, cbarg.context);
+	}
 
 	return_ACPI_STATUS(AE_OK);
 }
@@ -653,7 +658,6 @@ struct acpi_memrange *
 acpi_res_memrange(struct acpi_resources *res, int idx)
 {
 	struct acpi_memrange *ar;
-
 	SIMPLEQ_FOREACH(ar, &res->ar_memrange, ar_list) {
 		if (ar->ar_index == idx)
 			return ar;
@@ -665,10 +669,32 @@ struct acpi_irq *
 acpi_res_irq(struct acpi_resources *res, int idx)
 {
 	struct acpi_irq *ar;
-
+	printf(" ACPI_RESOURCE.C: ANTES DE ENTRAR NO SIMPLEQ_FOREACH\n");
+	if (&res->ar_irq != NULL)
+	{
+		printf(" &res->ar_irq != NULL\n");
+	}
+	else
+	{
+		printf(" &res->ar_irq == NULL\n");
+	}
+	
+	if ((&res->ar_irq)->sqh_first != NULL)
+	{
+		printf(" (&res->ar_irq)->sqh_first != NULL\n");
+	}
+	else
+	{
+		printf(" (&res->ar_irq)->sqh_first == NULL\n");
+	}
+	
+	
 	SIMPLEQ_FOREACH(ar, &res->ar_irq, ar_list) {
-		if (ar->ar_index == idx)
+		printf(" ACPI_RESOURCE.C: ENTROU NO SIMPLEQ_FOREACH ANTES DE ENTRAR NO IF(AR->AR_INDEX==IDX)\n");
+		if (ar->ar_index == idx){
+			printf(" ACPI_RESOURCE.C: ENTROU NO IF(AR->AR_INDEX==IDX)\n");
 			return ar;
+		}
 	}
 	return NULL;
 }
@@ -766,6 +792,7 @@ acpi_res_parse_init(device_t dev, void *arg, void **contextp)
 	res->ar_ndrq = 0;
 
 	*contextp = res;
+	printf(" SAINDO DO ACPI_RES_PARSE_INIT\n");
 }
 
 static void
