@@ -605,6 +605,9 @@ iic*		at dwiic?
 # Intel GPIO
 igpio*         at acpi? 
 
+# AMD GPIO
+amdgpio*       at acpi? 
+
 # I2C HID devices
 ihidev* at iic?
 

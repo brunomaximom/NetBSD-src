@@ -64,6 +64,13 @@ static const struct device_compatible_entry compat_data[] = {
 	{ .compat = "AMDI0010" },	/* AMD FCH */
 	{ .compat = "AMDI0510" },	/* AMD Seattle */
 	{ .compat = "APMC0D0F" },	/* Ampere eMAG */
+	{ .compat = "APMC0D0F" },
+	{ .compat = "INT33C2" },
+	{ .compat = "INT33C3" },
+	{ .compat = "INT3432" },
+	{ .compat = "INT3433" },
+	{ .compat = "80860F41" },
+	{ .compat = "808622C1" },
 	DEVICE_COMPAT_EOL
 };
 

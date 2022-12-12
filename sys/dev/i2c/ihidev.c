@@ -674,6 +674,7 @@ ihidev_intr_init(struct ihidev_softc *sc)
 	ACPI_STATUS rv;
 	char buf[100];
 
+	printf(" IHIDEV.C: ANTES DE ENTRAR NO ACPI_RESOURCE_PARSE\n");
 	rv = acpi_resource_parse(sc->sc_dev, hdl, "_CRS", &res,
 	    &acpi_resource_parse_ops_quiet);
 	if (ACPI_FAILURE(rv)) {
@@ -681,6 +682,7 @@ ihidev_intr_init(struct ihidev_softc *sc)
 		return false;
 	}
 
+	printf(" IHIDEV.C: ANTES DE ENTRAR NO ACPI_RES_IRQ\n");	
 	const struct acpi_irq * const irq = acpi_res_irq(&res, 0);
 	if (irq == NULL) {
 		aprint_error_dev(sc->sc_dev, "no IRQ resource\n");

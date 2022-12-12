@@ -304,6 +304,11 @@ file	dev/acpi/eqos_acpi.c		eqos_acpi
 attach	igpio at acpinodebus with igpio_acpi
 file	dev/acpi/igpio_acpi.c		igpio_acpi
 
+# AMD GPIO
+device 	amdgpio: gpiobus
+attach	amdgpio at acpinodebus with amdgpio_acpi
+file	dev/acpi/amdgpio_acpi.c		amdgpio_acpi
+
 # DesignWare Mobile Storage Host Controller
 attach	dwcmmc at acpinodebus with dwcmmc_acpi
 file	dev/acpi/dwcmmc_acpi.c		dwcmmc_acpi
