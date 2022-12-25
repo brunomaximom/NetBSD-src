@@ -1,4 +1,4 @@
-/*	$NetBSD: db_trace.c,v 1.4 2018/02/11 08:27:18 maxv Exp $	*/
+/*	$NetBSD: db_trace.c,v 1.6 2022/12/24 14:14:52 uwe Exp $	*/
 
 /*
  * Mach Operating System
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: db_trace.c,v 1.4 2018/02/11 08:27:18 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: db_trace.c,v 1.6 2022/12/24 14:14:52 uwe Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -205,23 +205,24 @@ db_stack_trace_print(db_expr_t addr, bool have_addr, db_expr_t count,
 		sym = db_frame_info(frame, callpc, &name, &offset, &is_trap,
 		    &narg);
 
-		if (lastframe == NULL && sym == (db_sym_t)0 && callpc != 0) {
+		if (lastframe == NULL && sym == DB_SYM_NULL && callpc != 0) {
 			/* Symbol not found, peek at code */
 			u_long instr = db_get_value(callpc, 4, false);
 
 			offset = 1;
 			if (
 #ifdef __x86_64__
-			    instr == 0xe5894855 ||
+			   (instr == 0xe5894855 ||
 					/* enter: pushq %rbp, movq %rsp, %rbp */
 			    (instr & 0x00ffffff) == 0x0048e589
 					/* enter+1: movq %rsp, %rbp */)
 #else
-			    (instr & 0x00ffffff) == 0x00e58955 ||
+			   ((instr & 0x00ffffff) == 0x00e58955 ||
 					/* enter: pushl %ebp, movl %esp, %ebp */
 			    (instr & 0x0000ffff) == 0x0000e589
 					/* enter+1: movl %esp, %ebp */)
 #endif
+			    )
 			{
 				offset = 0;
 			}

@@ -1,4 +1,4 @@
-/*	$NetBSD: compat_90_mod.c,v 1.3 2020/01/04 02:40:22 pgoyette Exp $	*/
+/*	$NetBSD: compat_90_mod.c,v 1.4 2022/12/19 23:19:51 pgoyette Exp $	*/
 
 /*-
  * Copyright (c) 2019 The NetBSD Foundation, Inc.
@@ -38,7 +38,7 @@
 #endif
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: compat_90_mod.c,v 1.3 2020/01/04 02:40:22 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: compat_90_mod.c,v 1.4 2022/12/19 23:19:51 pgoyette Exp $");
 
 #include <sys/systm.h>
 #include <sys/module.h>
@@ -60,7 +60,7 @@ compat_90_fini(void)
 	return vfs_syscalls_90_fini();
 }
 
-MODULE(MODULE_CLASS_EXEC, compat_90, NULL);
+MODULE(MODULE_CLASS_EXEC, compat_90, "compat_100");
 
 static int
 compat_90_modcmd(modcmd_t cmd, void *arg)

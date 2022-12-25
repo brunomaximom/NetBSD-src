@@ -1,4 +1,4 @@
-/*	$NetBSD: addbytes.c,v 1.66 2022/11/07 21:18:49 blymn Exp $	*/
+/*	$NetBSD: addbytes.c,v 1.68 2022/12/20 04:57:01 blymn Exp $	*/
 
 /*
  * Copyright (c) 1987, 1993, 1994
@@ -34,7 +34,7 @@
 #if 0
 static char sccsid[] = "@(#)addbytes.c	8.4 (Berkeley) 5/4/94";
 #else
-__RCSID("$NetBSD: addbytes.c,v 1.66 2022/11/07 21:18:49 blymn Exp $");
+__RCSID("$NetBSD: addbytes.c,v 1.68 2022/12/20 04:57:01 blymn Exp $");
 #endif
 #endif				/* not lint */
 
@@ -170,14 +170,14 @@ _cursesi_waddbytes(WINDOW *win, const char *bytes, int count, attr_t attr,
 		}
 
 		__CTRACE(__CTRACE_INPUT,
-		    "ADDBYTES WIDE(0x%x [%s], %x) at (%d, %d), ate %d bytes\n",
+		    "ADDBYTES WIDE(0x%04x [%s], %x) at (%d, %d), ate %d bytes\n",
 		    (unsigned)wc, unctrl((unsigned)wc), attr, *py, *px, n);
 		cc.vals[0] = wc;
 		cc.elements = 1;
 		cc.attributes = attr;
 		err = _cursesi_addwchar(win, &lp, py, px, &cc, char_interp);
 		bytes += n;
-		count -= wcwidth(wc);
+		count -= n;
 #endif
 	}
 

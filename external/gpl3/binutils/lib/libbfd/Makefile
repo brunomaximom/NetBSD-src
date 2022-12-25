@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.23 2021/04/13 04:58:59 mrg Exp $
+#	$NetBSD: Makefile,v 1.25 2022/12/24 20:17:08 christos Exp $
 
 NOLINKLIB=	# defined
 NOLINT=		# defined
@@ -28,7 +28,7 @@ BINDIR=/usr/lib
 .if exists(${DEFS_MK})
 .include "${DEFS_MK}"
 
-SHLIB_MAJOR=	17
+SHLIB_MAJOR=	18
 SHLIB_MINOR=	0
 
 LIBDPLIBS+=	z	${.CURDIR}/../../../../../lib/libz
@@ -54,12 +54,16 @@ GSRCS=		${G_libbfd_la_OBJECTS:libbfd.lo=lib_bfd.lo} \
 SRCS=		${GSRCS:.lo=.c}
 
 DPSRCS+=	elf32-target.h elf64-target.h targmatch.h \
-		elf32-ia64.c elf64-ia64.c peigen.c pepigen.c \
-		elf32-riscv.c elf64-riscv.c elf32-aarch64.c elf64-aarch64.c \
+		elf32-aarch64.c elf64-aarch64.c \
+		elf32-ia64.c elf64-ia64.c \
+		elf32-riscv.c elf64-riscv.c \
+		peigen.c pepigen.c \
 		pex64igen.c
 CLEANFILES+=	elf32-target.h elf64-target.h targmatch.h \
-		elf32-ia64.c elf64-ia64.c peigen.c pepigen.c \
-		elf32-riscv.c elf64-riscv.c elf32-aarch64.c elf64-aarch64.c \
+		elf32-aarch64.c elf64-aarch64.c \
+		elf32-ia64.c elf64-ia64.c \
+		elf32-riscv.c elf64-riscv.c \
+		peigen.c pepigen.c \
 		pex64igen.c
 
 TEXINFO=	bfd.texinfo
@@ -88,6 +92,14 @@ elf64-target.h: elfxx-target.h
 	${_MKTARGET_CREATE}
 	${TOOL_SED} -e s/NN/64/g < $> > $@
 
+elf32-aarch64.c: elfnn-aarch64.c
+	${_MKTARGET_CREATE}
+	${TOOL_SED} -e s/NN/32/g < $> > $@
+
+elf64-aarch64.c: elfnn-aarch64.c
+	${_MKTARGET_CREATE}
+	${TOOL_SED} -e s/NN/64/g < $> > $@
+
 elf32-ia64.c: elfnn-ia64.c
 	${_MKTARGET_CREATE}
 	${TOOL_SED} -e s/NN/32/g < $> > $@
@@ -101,14 +113,6 @@ elf32-riscv.c: elfnn-riscv.c
 	${TOOL_SED} -e s/NN/32/g < $> > $@
 
 elf64-riscv.c: elfnn-riscv.c
-	${_MKTARGET_CREATE}
-	${TOOL_SED} -e s/NN/64/g < $> > $@
-
-elf32-aarch64.c: elfnn-aarch64.c
-	${_MKTARGET_CREATE}
-	${TOOL_SED} -e s/NN/32/g < $> > $@
-
-elf64-aarch64.c: elfnn-aarch64.c
 	${_MKTARGET_CREATE}
 	${TOOL_SED} -e s/NN/64/g < $> > $@
 

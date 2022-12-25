@@ -1,4 +1,4 @@
-/*	$NetBSD: ehci.c,v 1.311 2022/04/06 22:01:45 mlelstv Exp $ */
+/*	$NetBSD: ehci.c,v 1.315 2022/12/13 21:29:04 jakllsch Exp $ */
 
 /*
  * Copyright (c) 2004-2012,2016,2020 The NetBSD Foundation, Inc.
@@ -54,7 +54,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ehci.c,v 1.311 2022/04/06 22:01:45 mlelstv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ehci.c,v 1.315 2022/12/13 21:29:04 jakllsch Exp $");
 
 #include "ohci.h"
 #include "uhci.h"
@@ -4259,7 +4259,6 @@ ehci_device_fs_isoc_init(struct usbd_xfer *xfer)
 	if (i > 16 || i == 0) {
 		/* Spec page 271 says intervals > 16 are invalid */
 		DPRINTF("bInterval %jd invalid", i, 0, 0, 0);
-
 		return EINVAL;
 	}
 
@@ -4364,7 +4363,7 @@ ehci_device_fs_isoc_transfer(struct usbd_xfer *xfer)
 	if (epipe->pipe.up_endpoint->ue_edesc->bInterval *
 			xfer->ux_nframes >= sc->sc_flsize - 4) {
 		printf("ehci: isoc descriptor requested that spans the entire"
-		    "frametable, too many frames\n");
+		    " frametable, too many frames\n");
 		return USBD_INVAL;
 	}
 
@@ -4483,7 +4482,7 @@ ehci_device_fs_isoc_transfer(struct usbd_xfer *xfer)
 	 * Part 2: Transfer descriptors have now been set up, now they must
 	 * be scheduled into the periodic frame list. Erk. Not wanting to
 	 * complicate matters, transfer is denied if the transfer spans
-	 * more than the period frame list.
+	 * more than the periodic frame list.
 	 */
 
 	/* Start inserting frames */
@@ -4498,7 +4497,7 @@ ehci_device_fs_isoc_transfer(struct usbd_xfer *xfer)
 	if (frindex >= sc->sc_flsize)
 		frindex &= (sc->sc_flsize - 1);
 
-	/* Whats the frame interval? */
+	/* What's the frame interval? */
 	i = epipe->pipe.up_endpoint->ue_edesc->bInterval;
 
 	for (sitd = exfer->ex_sitdstart, j = 0; j < frames;
@@ -4620,7 +4619,7 @@ ehci_device_isoc_init(struct usbd_xfer *xfer)
 	if (i > 16 || i == 0) {
 		/* Spec page 271 says intervals > 16 are invalid */
 		DPRINTF("bInterval %jd invalid", i, 0, 0, 0);
-		return USBD_INVAL;
+		return EINVAL;
 	}
 
 	ufrperframe = uimax(1, USB_UFRAMES_PER_FRAME / (1 << (i - 1)));
@@ -4858,9 +4857,9 @@ ehci_device_isoc_transfer(struct usbd_xfer *xfer)
 
 	/*
 	 * Part 2: Transfer descriptors have now been set up, now they must
-	 * be scheduled into the period frame list. Erk. Not wanting to
+	 * be scheduled into the periodic frame list. Erk. Not wanting to
 	 * complicate matters, transfer is denied if the transfer spans
-	 * more than the period frame list.
+	 * more than the periodic frame list.
 	 */
 
 	/* Start inserting frames */

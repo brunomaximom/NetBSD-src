@@ -1,4 +1,4 @@
-/*	$NetBSD: tprof_top.c,v 1.5 2022/12/09 02:19:07 ryo Exp $	*/
+/*	$NetBSD: tprof_top.c,v 1.8 2022/12/23 19:37:06 christos Exp $	*/
 
 /*-
  * Copyright (c) 2022 Ryo Shimizu <ryo@nerv.org>
@@ -28,7 +28,7 @@
 
 #include <sys/cdefs.h>
 #ifndef lint
-__RCSID("$NetBSD: tprof_top.c,v 1.5 2022/12/09 02:19:07 ryo Exp $");
+__RCSID("$NetBSD: tprof_top.c,v 1.8 2022/12/23 19:37:06 christos Exp $");
 #endif /* not lint */
 
 #include <sys/param.h>
@@ -154,10 +154,10 @@ reset_cursor_pos(void)
 
 	/* cursor_up * n */
 	if ((p = tigetstr("cuu")) != NULL) {
-		printf("%s", tparm(p, win.ws_row - 1, 0, 0, 0, 0, 0, 0, 0, 0));
+		putp(tparm(p, win.ws_row - 1, 0, 0, 0, 0, 0, 0, 0, 0));
 	} else if ((p = tigetstr("cuu1")) != NULL) {
 		for (i = win.ws_row - 1; i > 0; i--)
-			printf("%s", p);
+			putp(p);
 	}
 }
 
@@ -170,7 +170,7 @@ clr_to_eol(void)
 		return;
 
 	if ((p = tigetstr("el")) != NULL)
-		printf("%s", p);
+		putp(p);
 }
 
 /* newline, and clearing to end of line if needed */
@@ -194,7 +194,9 @@ lim_printf(int *lim, const char *fmt, ...)
 	if (*lim <= 0)
 		return 0;
 
-	p = alloca(*lim + 1);
+	p = malloc(*lim + 1);
+	if (p == NULL)
+		return -1;
 
 	va_start(ap, fmt);
 	vsnprintf(p, *lim + 1, fmt, ap);
@@ -202,6 +204,7 @@ lim_printf(int *lim, const char *fmt, ...)
 
 	written = strlen(p);
 	if (written == 0) {
+		free(p);
 		*lim = 0;
 		return 0;
 	}
@@ -209,6 +212,7 @@ lim_printf(int *lim, const char *fmt, ...)
 	fwrite(p, written, 1, stdout);
 	*lim -= written;
 
+	free(p);
 	return written;
 }
 
@@ -288,7 +292,7 @@ sigalrm_handler(int signo)
 	sigalrm = 1;
 }
 
-static void
+__dead static void
 die(int signo)
 {
 	tty_restore();
@@ -297,7 +301,7 @@ die(int signo)
 	exit(EXIT_SUCCESS);
 }
 
-static void __dead
+__dead static void
 die_errc(int status, int code, const char *fmt, ...)
 {
 	va_list ap;
@@ -676,20 +680,21 @@ show_count_per_event(int *lim)
 			do_redraw = true;
 		}
 	}
-	for (i = 0; i < nevent; i++) {
-		for (n = 0; n < ncpu; n++) {
-			l = snprintf(buf, sizeof(buf), "%"PRIu64,
-			    sample_n_per_event_cpu[opt_mode][nevent * n + i]);
-			if (sample_cpu_width[n] < (u_int)l) {
-				sample_cpu_width[n] = l;
-				do_redraw = true;
-			}
+	for (n = 0; n < ncpu; n++) {
+		uint64_t sum = 0;
+		for (i = 0; i < nevent; i++)
+			sum += sample_n_per_event_cpu[opt_mode][nevent * n + i];
+		l = snprintf(buf, sizeof(buf), "%"PRIu64, sum);
+		if (sample_cpu_width[n] < (u_int)l) {
+			sample_cpu_width[n] = l;
+			do_redraw = true;
 		}
 	}
 
 	if (do_redraw) {
-		lim_printf(lim, "  Rate %*s Eventname                       ",
-		    sample_event_width, "Sample#");
+		lim_printf(lim, "  Rate %*s %-*s",
+		    sample_event_width, "Sample#",
+		    SYMBOL_LEN, "Eventname");
 		for (n = 0; n < ncpu; n++) {
 			snprintf(buf, sizeof(buf), "CPU%d", n);
 			lim_printf(lim, " %*s", sample_cpu_width[n], buf);
@@ -796,8 +801,9 @@ sample_show(void)
 	lim_newline(&lim);
 
 	if (do_redraw) {
-		lim_printf(&lim, "  Rate %*s Symbol                          ",
-		    sample_event_width, "Sample#");
+		lim_printf(&lim, "  Rate %*s %-*s",
+		    sample_event_width, "Sample#",
+		    SYMBOL_LEN, "Symbol");
 		for (n = 0; n < ncpu; n++) {
 			snprintf(namebuf, sizeof(namebuf), "CPU%d", n);
 			lim_printf(&lim, " %*s", sample_cpu_width[n], namebuf);
@@ -917,34 +923,7 @@ tprof_top_usage(void)
 	exit(EXIT_FAILURE);
 }
 
-static int
-parse_event_scale(tprof_param_t *param, const char *str)
-{
-	double d;
-	uint64_t n;
-	char *p;
-
-	if (str[0] == '=') {
-		str++;
-		n = strtoull(str, &p, 0);
-		if (*p != '\0')
-			return -1;
-		param->p_value2 = n;
-		param->p_flags |= TPROF_PARAM_VALUE2_TRIGGERCOUNT;
-	} else {
-		if (strncasecmp("0x", str, 2) == 0)
-			d = strtol(str, &p, 0);
-		else
-			d = strtod(str, &p);
-		if (*p != '\0')
-			return -1;
-		param->p_value2 = 0x100000000ULL / d;
-		param->p_flags |= TPROF_PARAM_VALUE2_SCALE;
-	}
-	return 0;
-}
-
-void
+__dead void
 tprof_top(int argc, char **argv)
 {
 	tprof_param_t params[TPROF_MAXCOUNTERS];
@@ -952,7 +931,7 @@ tprof_top(int argc, char **argv)
 	ssize_t tprof_bufsize, len;
 	u_int i;
 	int ch, ret;
-	char *tprof_buf, *tokens[2], *p;
+	char *tprof_buf, *p, *errmsg;
 	bool noinput = false;
 
 	memset(params, 0, sizeof(params));
@@ -967,18 +946,11 @@ tprof_top(int argc, char **argv)
 			opt_showcounter = 1;
 			break;
 		case 'e':
-			p = estrdup(optarg);
-			tokens[0] = strtok(p, ",");
-			tokens[1] = strtok(NULL, ",");
-			tprof_event_lookup(tokens[0], &params[nevent]);
-			if (tokens[1] != NULL) {
-				if (parse_event_scale(&params[nevent],
-				    tokens[1]) != 0) {
-					die_errc(EXIT_FAILURE, 0,
-					    "invalid scale: %s", tokens[1]);
-				}
+			if (tprof_parse_event(&params[nevent], optarg,
+			    TPROF_PARSE_EVENT_F_ALLOWSCALE,
+			    &eventname[nevent], &errmsg) != 0) {
+				die_errc(EXIT_FAILURE, 0, "%s", errmsg);
 			}
-			eventname[nevent] = tokens[0];
 			nevent++;
 			if (nevent > __arraycount(params) ||
 			    nevent > ncounters)
@@ -1046,12 +1018,12 @@ tprof_top(int argc, char **argv)
 	printf("collecting samples...");
 	fflush(stdout);
 
-	tprof_bufsize = sizeof(tprof_sample_t) * 8192;
+	tprof_bufsize = sizeof(tprof_sample_t) * 1024 * 32;
 	tprof_buf = emalloc(tprof_bufsize);
 	do {
 		bool force_update = false;
 
-		for (;;) {
+		while (sigalrm == 0 && !force_update) {
 			fd_set r;
 			int nfound;
 			char c;
@@ -1081,6 +1053,12 @@ tprof_top(int argc, char **argv)
 					/* toggle mode */
 					opt_mode = (opt_mode + 1) %
 					    SAMPLE_MODE_NUM;
+					do_redraw = true;
+					break;
+				case 'c':
+					/* toggle mode */
+					opt_showcounter ^= 1;
+					do_redraw = true;
 					break;
 				case 'q':
 					goto done;
@@ -1088,14 +1066,10 @@ tprof_top(int argc, char **argv)
 					sample_reset(true);
 					break;
 				default:
-					printf("[%02x]", c);
-					fflush(stdout);
+					continue;
 				}
 				force_update = true;
-				continue;
 			}
-			if (sigalrm != 0 || force_update)
-				break;
 
 			if (FD_ISSET(devfd, &r)) {
 				len = read(devfd, tprof_buf, tprof_bufsize);
