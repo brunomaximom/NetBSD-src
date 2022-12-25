@@ -393,6 +393,11 @@ acpi_resource_parse_callback(ACPI_RESOURCE *res, void *context)
 		break;
 	}
 
+	if (device_is_a(arg->dev, "ihidev")) {
+                aprint_normal_dev(arg->dev, "type=%u length=%u\n",
+                    res->Type, res->Length);
+        }
+
 	return_ACPI_STATUS(AE_OK);
 }
 

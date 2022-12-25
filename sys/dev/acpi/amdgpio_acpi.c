@@ -137,6 +137,7 @@ amdgpio_attach(device_t parent, device_t self, void *aux)
 	struct acpi_mem *mem;
 	struct acpi_irq *irq;
 	ACPI_STATUS rv;
+	ACPI_DEVICE_INFO *devinfo;
 	int64_t uid;
 
 	sc->sc_dev = self;
@@ -161,10 +162,18 @@ amdgpio_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
-	rv = acpi_resource_parse(self, aa->aa_node->ad_handle, "_CRS",
-	    &res, &acpi_resource_parse_ops_quiet);
+	rv = acpi_resource_parse(sc->sc_dev, aa->aa_node->ad_handle, "_CRS",
+	    &res, &acpi_resource_parse_ops_default);
 	if (ACPI_FAILURE(rv))
 		return;
+
+	rv = AcpiGetObjectInfo(sc->sc_handle, &devinfo);
+	if (ACPI_FAILURE(rv)) {
+                aprint_error_dev(sc->sc_dev, "AcpiGetObjectInfo failed\n");
+                return;
+        }
+    aprint_normal_dev(sc->sc_dev, "_HID: %s, %x\n",
+        devinfo->HardwareId.String, devinfo->Name);
 
 	mem = acpi_res_mem(&res, 0);
 	if (mem == NULL) {
