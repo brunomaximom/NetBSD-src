@@ -1,4 +1,4 @@
-#	$NetBSD: genassym.cf,v 1.126 2022/09/07 00:40:18 knakahara Exp $
+#	$NetBSD: genassym.cf,v 1.131 2022/12/27 08:40:40 msaitoh Exp $
 
 #
 # Copyright (c) 1998, 2006, 2007, 2008 The NetBSD Foundation, Inc.
@@ -67,7 +67,12 @@ if defined(_KERNEL_OPT)
 include "opt_compat_freebsd.h"
 include "opt_compat_linux.h"
 include "opt_compat_netbsd.h"
-include	"opt_xen.h"
+include "opt_xen.h"
+endif
+
+if defined(_KERNEL) && defined(_KERNEL_OPT)
+include "isa.h"
+include "ioapic.h"
 endif
 
 quote #define __MUTEX_PRIVATE
@@ -98,15 +103,6 @@ include <machine/intr.h>
 include <machine/types.h>
 include <machine/segments.h>
 
-ifdef XEN
-include <xen/include/public/sched.h>
-include <xen/include/public/arch-x86/hvm/start_info.h>
-endif
-
-if defined(_KERNEL) && defined(_KERNEL_OPT)
-include "ioapic.h"
-endif
-
 include <compat/sys/signal.h>
 
 ifdef COMPAT_LINUX
@@ -118,24 +114,29 @@ ifdef COMPAT_FREEBSD
 include <compat/freebsd/freebsd_machdep.h>
 endif
 
+if NISA > 0
+include <machine/isa_machdep.h>
+endif
+
 if NIOAPIC > 0
 include <machine/i82093reg.h>
 include <machine/i82093var.h>
 endif
 
-if defined(_KERNEL) && defined(_KERNEL_OPT)
-include "isa.h"
-endif
-if NISA > 0
-include <machine/isa_machdep.h>
+ifdef XEN
+include <xen/include/public/sched.h>
+include <xen/include/public/arch-x86/hvm/start_info.h>
 endif
 
 include <sys/bus.h>
 
+# general constants
 define	PAGE_SIZE		PAGE_SIZE
-
 define	UPAGES			UPAGES
 define	USPACE			USPACE
+define	PGOFSET			PGOFSET
+define	PGSHIFT			PGSHIFT
+
 define	KSTACK_SIZE		KSTACK_SIZE
 define	KERNBASE		KERNBASE
 define	KERNTEXTOFF		KERNTEXTOFF
@@ -153,48 +154,40 @@ define	PTE_BASE		PTE_BASE
 define	PDP_SIZE		PDP_SIZE
 define	PDE_SIZE		sizeof(pd_entry_t)
 
+define	GUFS_SEL		GUFS_SEL
+define	GUGS_SEL		GUGS_SEL
+
 define	IOMAPSIZE		IOMAPSIZE
 
 define	VM_MAXUSER_ADDRESS	(int)VM_MAXUSER_ADDRESS
 
+# lwp & proc fields and values
 define	L_PCB			offsetof(struct lwp, l_addr)
+define	L_CPU			offsetof(struct lwp, l_cpu)
 define	L_FLAG			offsetof(struct lwp, l_flag)
 define	L_PROC			offsetof(struct lwp, l_proc)
-define	L_MD_REGS		offsetof(struct lwp, l_md.md_regs)
-define	L_MD_FLAGS		offsetof(struct lwp, l_md.md_flags)
-define	L_MD_ASTPENDING		offsetof(struct lwp, l_md.md_astpending)
-define	L_CPU			offsetof(struct lwp, l_cpu)
 define	L_NCSW			offsetof(struct lwp, l_ncsw)
 define	L_NOPREEMPT		offsetof(struct lwp, l_nopreempt)
 define	L_DOPREEMPT		offsetof(struct lwp, l_dopreempt)
 define	L_KPRIORITY		offsetof(struct lwp, l_kpriority)
+define	L_MD_REGS		offsetof(struct lwp, l_md.md_regs)
+define	L_MD_FLAGS		offsetof(struct lwp, l_md.md_flags)
+define	L_MD_ASTPENDING		offsetof(struct lwp, l_md.md_astpending)
+
+define	LW_SYSTEM		LW_SYSTEM
+define	MDL_FPU_IN_CPU		MDL_FPU_IN_CPU
+
 define	P_FLAG			offsetof(struct proc, p_flag)
 define	P_RASLIST		offsetof(struct proc, p_raslist)
 define	P_MD_SYSCALL		offsetof(struct proc, p_md.md_syscall)
 
-define	MDL_FPU_IN_CPU		MDL_FPU_IN_CPU
-
-define	LW_SYSTEM		LW_SYSTEM
-
-define	GUFS_SEL		GUFS_SEL
-define	GUGS_SEL		GUGS_SEL
-
-define	M_DATA			offsetof(struct mbuf, m_data)
-define	M_LEN			offsetof(struct mbuf, m_len)
-define	M_NEXT			offsetof(struct mbuf, m_next)
-
-define	IP_SRC			offsetof(struct ip, ip_src)
-define	IP_DST			offsetof(struct ip, ip_dst)
-
-define	IP6_SRC			offsetof(struct ip6_hdr, ip6_src)
-define	IP6_DST			offsetof(struct ip6_hdr, ip6_dst)
-
+# pcb fields
 define	PCB_CR3			offsetof(struct pcb, pcb_cr3)
+define	PCB_CR0			offsetof(struct pcb, pcb_cr0)
+define	PCB_ONFAULT		offsetof(struct pcb, pcb_onfault)
 define	PCB_EBP			offsetof(struct pcb, pcb_ebp)
 define	PCB_ESP			offsetof(struct pcb, pcb_esp)
 define	PCB_ESP0		offsetof(struct pcb, pcb_esp0)
-define	PCB_CR0			offsetof(struct pcb, pcb_cr0)
-define	PCB_ONFAULT		offsetof(struct pcb, pcb_onfault)
 define	PCB_FSD			offsetof(struct pcb, pcb_fsd)
 define	PCB_GSD			offsetof(struct pcb, pcb_gsd)
 define	PCB_IOMAP		offsetof(struct pcb, pcb_iomap)
@@ -234,16 +227,12 @@ define	FREEBSD_SIGF_HANDLER	offsetof(struct freebsd_sigframe, sf_handler)
 define	FREEBSD_SIGF_SC		offsetof(struct freebsd_sigframe, sf_sc)
 endif
 
-define	IH_FUN			offsetof(struct intrhand, ih_fun)
-define	IH_ARG			offsetof(struct intrhand, ih_arg)
-define	IH_LEVEL		offsetof(struct intrhand, ih_level)
-define	IH_NEXT			offsetof(struct intrhand, ih_next)
-
 define	TSS_TSS			offsetof(struct cpu_tss, tss)
 define	TSS_ESP0		offsetof(struct cpu_tss, tss.tss_esp0)
 define	TSS_IOBASE		offsetof(struct cpu_tss, tss.tss_iobase)
 define	TSS_IOMAP		offsetof(struct cpu_tss, iomap)
 
+# CPU info structure
 define	CPU_INFO_SELF		offsetof(struct cpu_info, ci_self)
 define	CPU_INFO_RESCHED	offsetof(struct cpu_info, ci_want_resched)
 define	CPU_INFO_WANT_PMAPLOAD	offsetof(struct cpu_info, ci_want_pmapload)
@@ -259,21 +248,20 @@ define	IOMAP_VALIDOFF		IOMAP_VALIDOFF
 define	CPU_INFO_NSYSCALL	offsetof(struct cpu_info, ci_data.cpu_nsyscall)
 define	CPU_INFO_NTRAP		offsetof(struct cpu_info, ci_data.cpu_ntrap)
 define	CPU_INFO_NINTR		offsetof(struct cpu_info, ci_data.cpu_nintr)
-define	CPU_INFO_CURPRIORITY	offsetof(struct cpu_info, ci_schedstate.spc_curpriority)
 define	CPU_INFO_CC_SKEW	offsetof(struct cpu_info, ci_data.cpu_cc_skew)
-
+define	CPU_INFO_CURPRIORITY	offsetof(struct cpu_info, ci_schedstate.spc_curpriority)
 
 define	CPU_INFO_VENDOR		offsetof(struct cpu_info, ci_vendor[0])
 define	CPU_INFO_SIGNATURE	offsetof(struct cpu_info, ci_signature)
 
 define	CPU_INFO_GDT		offsetof(struct cpu_info, ci_gdt)
+define	CPU_INFO_ILEVEL		(offsetof(struct cpu_info, ci_istate) + 7)
+define	CPU_INFO_IDEPTH		offsetof(struct cpu_info, ci_idepth)
 define	CPU_INFO_IPENDING	offsetof(struct cpu_info, ci_istate)
 define	CPU_INFO_IMASKED	offsetof(struct cpu_info, ci_imasked)
 define	CPU_INFO_IMASK		offsetof(struct cpu_info, ci_imask)
-define	CPU_INFO_ISOURCES	offsetof(struct cpu_info, ci_isources)
 define	CPU_INFO_IUNMASK	offsetof(struct cpu_info, ci_iunmask)
-define	CPU_INFO_ILEVEL		(offsetof(struct cpu_info, ci_istate) + 7)
-define	CPU_INFO_IDEPTH		offsetof(struct cpu_info, ci_idepth)
+define	CPU_INFO_ISOURCES	offsetof(struct cpu_info, ci_isources)
 define	CPU_INFO_MTX_COUNT	offsetof(struct cpu_info, ci_mtx_count)
 define	CPU_INFO_MTX_OLDSPL	offsetof(struct cpu_info, ci_mtx_oldspl)
 define	CPU_INFO_INTRSTACK	offsetof(struct cpu_info, ci_intrstack)
@@ -301,27 +289,32 @@ define		IOAPIC_SC_DATA		offsetof(struct ioapic_softc, sc_data)
 define		PIC_LOCK		offsetof(struct pic, pic_lock)
 endif
 
+# interrupt handler fields
+define	IH_FUN			offsetof(struct intrhand, ih_fun)
+define	IH_ARG			offsetof(struct intrhand, ih_arg)
+define	IH_LEVEL		offsetof(struct intrhand, ih_level)
+define	IH_NEXT			offsetof(struct intrhand, ih_next)
+
 define	SIZEOF_CPU_INFO		sizeof(struct cpu_info)
 define	SIZEOF_ISTUB		sizeof(struct intrstub)
 
-define	SIZEOF_ISOURCE		sizeof(struct intrsource)
-define	IS_RECURSE		offsetof(struct intrsource, is_recurse)
-define	IS_RESUME		offsetof(struct intrsource, is_resume)
-define	IS_EVCNTLO		offsetof(struct intrsource, is_evcnt.ev_count)
-define	IS_EVCNTHI		offsetof(struct intrsource, is_evcnt.ev_count)+4
-define	IS_HANDLERS		offsetof(struct intrsource, is_handlers)
-define	IS_PIC			offsetof(struct intrsource, is_pic)
-define	IS_FLAGS		offsetof(struct intrsource, is_flags)
-define	IS_PIN			offsetof(struct intrsource, is_pin)
-define	IS_TYPE			offsetof(struct intrsource, is_type)
-define	IS_MAXLEVEL		offsetof(struct intrsource, is_maxlevel)
-define	IS_LWP			offsetof(struct intrsource, is_lwp)
-define	IS_MASK_COUNT		offsetof(struct intrsource, is_mask_count)
+define	SIZEOF_ISOURCE	sizeof(struct intrsource)
+define	IS_RECURSE	offsetof(struct intrsource, is_recurse)
+define	IS_RESUME	offsetof(struct intrsource, is_resume)
+define	IS_EVCNTLO	offsetof(struct intrsource, is_evcnt.ev_count)
+define	IS_EVCNTHI	offsetof(struct intrsource, is_evcnt.ev_count)+4
+define	IS_HANDLERS	offsetof(struct intrsource, is_handlers)
+define	IS_PIC		offsetof(struct intrsource, is_pic)
+define	IS_FLAGS	offsetof(struct intrsource, is_flags)
+define	IS_PIN		offsetof(struct intrsource, is_pin)
+define	IS_TYPE		offsetof(struct intrsource, is_type)
+define	IS_MAXLEVEL	offsetof(struct intrsource, is_maxlevel)
+define	IS_LWP		offsetof(struct intrsource, is_lwp)
+define	IS_MASK_COUNT	offsetof(struct intrsource, is_mask_count)
 
 define	IPL_NONE		IPL_NONE
 define	IPL_PREEMPT		IPL_PREEMPT
 define	IPL_NET			IPL_NET
-define	IPL_SCHED		IPL_SCHED
 define	IPL_CLOCK		IPL_CLOCK
 define	IPL_VM			IPL_VM
 define	IPL_SCHED		IPL_SCHED
@@ -346,6 +339,16 @@ define	PSL_MBO			PSL_MBO
 define	PSL_ID			PSL_ID
 define	PSL_I			PSL_I
 
+# Constants required for in_cksum() and friends.
+define	M_DATA			offsetof(struct mbuf, m_data)
+define	M_LEN			offsetof(struct mbuf, m_len)
+define	M_NEXT			offsetof(struct mbuf, m_next)
+define	IP_SRC			offsetof(struct ip, ip_src)
+define	IP_DST			offsetof(struct ip, ip_dst)
+define	IP6_SRC			offsetof(struct ip6_hdr, ip6_src)
+define	IP6_DST			offsetof(struct ip6_hdr, ip6_dst)
+
+# Locking
 define	MTX_IPL			offsetof(struct kmutex, u.s.mtxs_ipl)
 define	MTX_LOCK		offsetof(struct kmutex, mtx_lock)
 define	MTX_OWNER		offsetof(struct kmutex, u.mtxa_owner)
@@ -370,8 +373,6 @@ define	BST_TYPE		offsetof(struct bus_space_tag, bst_type)
 define	L1_SHIFT		L1_SHIFT
 define	L2_SHIFT		L2_SHIFT
 define	L2_FRAME		L2_FRAME
-define	PGOFSET			PGOFSET
-define	PGSHIFT			PGSHIFT
 
 define	VM_GUEST_XENPV		VM_GUEST_XENPV
 define	VM_GUEST_XENPVH		VM_GUEST_XENPVH
