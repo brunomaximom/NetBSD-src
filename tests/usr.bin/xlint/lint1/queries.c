@@ -1,4 +1,4 @@
-/*	$NetBSD: queries.c,v 1.6 2022/09/24 19:55:44 rillig Exp $	*/
+/*	$NetBSD: queries.c,v 1.9 2023/01/15 14:00:09 rillig Exp $	*/
 # 3 "queries.c"
 
 /*
@@ -95,6 +95,29 @@ Q3(int i, unsigned u)
 unsigned long long
 Q4(signed char *ptr, int i, unsigned long long ull)
 {
+
+	/*
+	 * For constants, the usual arithmetic conversions are usually not
+	 * interesting, so omit them.
+	 */
+	u32 = u32 & 0xff;
+	u32 &= 0xff;
+
+	/* expect+2: usual arithmetic conversion for '&' from 'int' to 'unsigned int' [Q4] */
+	/* expect+1: implicit conversion changes sign from 'int' to 'unsigned int' [Q3] */
+	u32 = u32 & s32;
+	/*
+	 * XXX: C99 5.6.16.2 says that the usual arithmetic conversions
+	 * happen for compound assignments as well.
+	 */
+	/* expect+1: implicit conversion changes sign from 'int' to 'unsigned int' [Q3] */
+	u32 &= s32;
+
+	/* expect+3: implicit conversion changes sign from 'unsigned char' to 'int' [Q3] */
+	/* expect+2: usual arithmetic conversion for '&' from 'int' to 'unsigned int' [Q4] */
+	/* expect+1: implicit conversion changes sign from 'int' to 'unsigned int' [Q3] */
+	u32 = u32 & u8;
+
 	/*
 	 * The conversion from 'signed char' to 'int' is done by the integer
 	 * promotions (C11 6.3.1.1p2), not by the usual arithmetic
@@ -223,6 +246,12 @@ Q7(void)
 	c64 = (c32_t)f32;
 	c64 = (c64_t)f32;
 
+
+	/*
+	 * Converting a void pointer type to an object pointer type requires
+	 * an explicit cast in C++, as it is a narrowing conversion. In C,
+	 * that conversion is done implicitly.
+	 */
 
 	/* expect+1: redundant cast from 'pointer to void' to 'pointer to char' before assignment [Q7] */
 	str = (char *)allocate();

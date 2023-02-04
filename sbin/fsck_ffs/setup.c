@@ -1,4 +1,4 @@
-/*	$NetBSD: setup.c,v 1.104 2022/11/17 06:40:38 chs Exp $	*/
+/*	$NetBSD: setup.c,v 1.106 2023/01/08 05:25:24 chs Exp $	*/
 
 /*
  * Copyright (c) 1980, 1986, 1993
@@ -34,7 +34,7 @@
 #if 0
 static char sccsid[] = "@(#)setup.c	8.10 (Berkeley) 5/9/95";
 #else
-__RCSID("$NetBSD: setup.c,v 1.104 2022/11/17 06:40:38 chs Exp $");
+__RCSID("$NetBSD: setup.c,v 1.106 2023/01/08 05:25:24 chs Exp $");
 #endif
 #endif /* not lint */
 
@@ -85,7 +85,8 @@ int16_t sblkpostbl[256];
 int
 setup(const char *dev, const char *origdev)
 {
-	long cg, size, asked, i, j;
+	uint32_t cg;
+	long size, asked, i, j;
 	long bmapsize;
 	struct disk_geom geo;
 	struct dkwedge_info dkw;
@@ -1150,7 +1151,7 @@ static int
 check_snapinum(void)
 {
 	int loc, loc2, res;
-	int *snapinum = &sblock->fs_snapinum[0];
+	uint32_t *snapinum = &sblock->fs_snapinum[0];
 
 	res = 0;
  

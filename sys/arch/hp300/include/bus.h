@@ -1,4 +1,4 @@
-/*	$NetBSD: bus.h,v 1.22 2021/03/07 10:01:08 skrll Exp $	*/
+/*	$NetBSD: bus.h,v 1.24 2023/01/27 19:48:00 tsutsui Exp $	*/
 
 /*-
  * Copyright (c) 1996, 1997, 1998 The NetBSD Foundation, Inc.
@@ -280,7 +280,7 @@ do {									\
 			jne	1b"				:	\
 								:	\
 			    "r" ((h) + (o)), "g" (a), "g" (c)	:	\
-			    "%a0","%a1","%d0");				\
+			    "a0","a1","d0","memory");			\
 	}								\
 } while (/* CONSTCOND */ 0)
 
@@ -298,7 +298,7 @@ do {									\
 			jne	1b"				:	\
 								:	\
 			    "r" ((h) + (o)), "g" (a), "g" (c)	:	\
-			    "%a0","%a1","%d0");				\
+			    "a0","a1","d0","memory");			\
 	}								\
 } while (/* CONSTCOND */ 0)
 
@@ -315,7 +315,7 @@ do {									\
 			jne	1b"				:	\
 								:	\
 			    "r" ((h) + (o)), "g" (a), "g" (c)	:	\
-			    "%a0","%a1","%d0");				\
+			    "a0","a1","d0","memory");			\
 	}								\
 } while (/* CONSTCOND */ 0)
 
@@ -343,7 +343,7 @@ do {									\
 			jne	1b"				:	\
 								:	\
 			    "r" ((h) + (o)), "g" (a), "g" (c)	:	\
-			    "%a0","%a1","%d0");				\
+			    "a0","a1","d0","memory");			\
 	}								\
 } while (/* CONSTCOND */ 0)
 
@@ -361,7 +361,7 @@ do {									\
 			jne	1b"				:	\
 								:	\
 			    "r" ((h) + (o)), "g" (a), "g" (c)	:	\
-			    "%a0","%a1","%d0");				\
+			    "a0","a1","d0","memory");			\
 	}								\
 } while (/* CONSTCOND */ 0)
 
@@ -379,7 +379,7 @@ do {									\
 			jne	1b"				:	\
 								:	\
 			    "r" ((h) + (o)), "g" (a), "g" (c)	:	\
-			    "%a0","%a1","%d0");				\
+			    "a0","a1","d0","memory");			\
 	}								\
 } while (/* CONSTCOND */ 0)
 
@@ -439,7 +439,7 @@ do {									\
 			jne	1b"				:	\
 								:	\
 			    "r" ((h) + (o)), "g" (a), "g" (c)	:	\
-			    "%a0","%a1","%d0");				\
+			    "a0","a1","d0");				\
 	}								\
 } while (/* CONSTCOND */ 0)
 
@@ -457,7 +457,7 @@ do {									\
 			jne	1b"				:	\
 								:	\
 			    "r" ((h) + (o)), "g" (a), "g" (c)	:	\
-			    "%a0","%a1","%d0");				\
+			    "a0","a1","d0");				\
 	}								\
 } while (/* CONSTCOND */ 0)
 
@@ -476,7 +476,7 @@ do {									\
 			jne	1b"				:	\
 								:	\
 			    "r" ((h) + (o)), "g" (a), "g" (c)	:	\
-			    "%a0","%a1","%d0");				\
+			    "a0","a1","d0");				\
 	}								\
 } while (/* CONSTCOND */ 0)
 
@@ -503,7 +503,7 @@ do {									\
 			jne	1b"				:	\
 								:	\
 			    "r" ((h) + (o)), "g" (a), "g" (c)	:	\
-			    "%a0","%a1","%d0");				\
+			    "a0","a1","d0");				\
 	}								\
 } while (/* CONSTCOND */ 0)
 
@@ -521,7 +521,7 @@ do {									\
 			jne	1b"				:	\
 								:	\
 			    "r" ((h) + (o)), "g" (a), "g" (c)	:	\
-			    "%a0","%a1","%d0");				\
+			    "a0","a1","d0");				\
 	}								\
 } while (/* CONSTCOND */ 0)
 
@@ -539,7 +539,7 @@ do {									\
 			jne	1b"				:	\
 								:	\
 			    "r" ((h) + (o)), "g" (a), "g" (c)	:	\
-			    "%a0","%a1","%d0");				\
+			    "a0","a1","d0");				\
 	}								\
 } while (/* CONSTCOND */ 0)
 
@@ -566,7 +566,7 @@ do {									\
 			jne	1b"				:	\
 								:	\
 			    "r" ((h) + (o)), "g" (val), "g" (c)	:	\
-			    "%a0","%d0","%d1");				\
+			    "a0","d0","d1");				\
 	}								\
 } while (/* CONSTCOND */ 0)
 
@@ -584,7 +584,7 @@ do {									\
 			jne	1b"				:	\
 								:	\
 			    "r" ((h) + (o)), "g" (val), "g" (c)	:	\
-			    "%a0","%d0","%d1");				\
+			    "a0","d0","d1");				\
 	}								\
 } while (/* CONSTCOND */ 0)
 
@@ -602,7 +602,7 @@ do {									\
 			jne	1b"				:	\
 								:	\
 			    "r" ((h) + (o)), "g" (val), "g" (c)	:	\
-			    "%a0","%d0","%d1");				\
+			    "a0","d0","d1");				\
 	}								\
 } while (/* CONSTCOND */ 0)
 
@@ -629,7 +629,7 @@ do {									\
 			jne	1b"				:	\
 								:	\
 			    "r" ((h) + (o)), "g" (val), "g" (c)	:	\
-			    "%a0","%d0","%d1");				\
+			    "a0","d0","d1");				\
 	}								\
 } while (/* CONSTCOND */ 0)
 
@@ -647,7 +647,7 @@ do {									\
 			jne	1b"				:	\
 								:	\
 			    "r" ((h) + (o)), "g" (val), "g" (c)	:	\
-			    "%a0","%d0","%d1");				\
+			    "a0","d0","d1");				\
 	}								\
 } while (/* CONSTCOND */ 0)
 
@@ -666,7 +666,7 @@ do {									\
 			jne	1b"				:	\
 								:	\
 			    "r" ((h) + (o)), "g" (val), "g" (c)	:	\
-			    "%a0","%d0","%d1");				\
+			    "a0","d0","d1");				\
 	}								\
 } while (/* CONSTCOND */ 0)
 
@@ -756,5 +756,5 @@ __HP300_copy_region_N(4)
  * There is no bus_dma(9)'fied bus drivers on this port.
  */
 #define __HAVE_NO_BUS_DMA
- 
+
 #endif /* _HP300_BUS_H_ */

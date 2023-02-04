@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.14 2022/10/28 09:43:59 wiz Exp $
+#	$NetBSD: Makefile,v 1.16 2023/01/26 17:16:57 tsutsui Exp $
 
 .include <bsd.own.mk>
 
@@ -56,7 +56,8 @@ LDADD+= ${LDADD.dix} \
 	${LDADD.Xi} \
 	-lXfont2 \
 	-lpixman-1 \
-	-lXext \
+	-lXdmcp \
+	-lXau \
 	-lX11 \
 	-lz \
 	-lm
@@ -78,7 +79,8 @@ DPADD+= ${LDADD.dix} \
 	${DPADD.Xi} \
 	${LIBXFONT2} \
 	${LIBPIXMAN-1} \
-	${LIBXEXT} \
+	${LIBXDMCP} \
+	${LIBXAU} \
 	${LIBX11} \
 	${LIBZ} \
 	${LIBM}

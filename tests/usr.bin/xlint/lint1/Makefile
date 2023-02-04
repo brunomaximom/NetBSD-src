@@ -1,7 +1,7 @@
-# $NetBSD: Makefile,v 1.129 2022/07/05 22:50:41 rillig Exp $
+# $NetBSD: Makefile,v 1.135 2023/01/29 17:02:09 rillig Exp $
 
 NOMAN=		# defined
-MAX_MESSAGE=	349		# see lint1/err.c
+MAX_MESSAGE=	350		# see lint1/err.c
 
 .include <bsd.own.mk>
 
@@ -18,8 +18,10 @@ archsubdir.sh:
 	@echo archsubdir=${ARCHSUBDIR} >${.TARGET}
 
 FILESDIR=	${TESTSDIR}
+FILES+=		c11_atomic.c
 FILES+=		c11_generic_expression.c
 FILES+=		c90.c
+FILES+=		c99_atomic.c
 FILES+=		c99_bool_strict_suppressed.c
 FILES+=		c99_init_array.c
 FILES+=		c99_init_designator.c
@@ -34,8 +36,6 @@ FILES+=		d_c99_complex_num.c
 FILES+=		d_c99_complex_split.c
 FILES+=		d_c99_compound_literal_comma.c
 FILES+=		d_c99_decls_after_stmt.c
-FILES+=		d_c99_decls_after_stmt2.c
-FILES+=		d_c99_decls_after_stmt3.c
 FILES+=		d_c99_flex_array_packed.c
 FILES+=		d_c99_for_loops.c
 FILES+=		d_c99_func.c
@@ -81,12 +81,10 @@ FILES+=		d_nolimit_init.c
 FILES+=		d_packed_structs.c
 FILES+=		d_pr_22119.c
 FILES+=		d_return_type.c
-FILES+=		d_shift_to_narrower_type.c
 FILES+=		d_struct_init_nested.c
 FILES+=		d_type_conv1.c
 FILES+=		d_type_conv2.c
 FILES+=		d_type_conv3.c
-FILES+=		d_type_question_colon.c
 FILES+=		d_typefun.c
 FILES+=		d_typename_as_var.c
 FILES+=		d_zero_sized_arrays.c
@@ -112,6 +110,7 @@ FILES+=		expr_promote.exp-ln
 FILES+=		expr_promote_trad.c
 FILES+=		expr_promote_trad.exp-ln
 FILES+=		expr_range.c
+FILES+=		expr_sizeof.c
 FILES+=		feat_stacktrace.c
 FILES+=		gcc_attribute.c
 FILES+=		gcc_attribute_aligned.c

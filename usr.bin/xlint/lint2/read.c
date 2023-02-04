@@ -1,4 +1,4 @@
-/* $NetBSD: read.c,v 1.76 2022/05/20 21:18:55 rillig Exp $ */
+/* $NetBSD: read.c,v 1.78 2023/01/14 09:30:07 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -38,7 +38,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID)
-__RCSID("$NetBSD: read.c,v 1.76 2022/05/20 21:18:55 rillig Exp $");
+__RCSID("$NetBSD: read.c,v 1.78 2023/01/14 09:30:07 rillig Exp $");
 #endif
 
 #include <ctype.h>
@@ -107,6 +107,16 @@ static	unsigned int thash(const char *, size_t);
 static	char	*inpqstrg(const char *, const char **);
 static	const	char *inpname(const char *, const char **);
 static	int	getfnidx(const char *);
+
+/* Allocate zero-initialized memory that doesn't need to be freed. */
+static void *
+xalloc(size_t sz)
+{
+
+	void *ptr = xmalloc(sz);
+	(void)memset(ptr, 0, sz);
+	return ptr;
+}
 
 static bool
 try_parse_int(const char **p, int *num)
@@ -295,7 +305,7 @@ setfnid(int fid, const char *cp)
 	 * file by lint1 are always the previous index + 1.
 	 */
 	if ((size_t)fid >= ninpfns)
-		errx(1, "internal error: setfnid()");
+		errx(1, "internal error: setfnid");
 	inpfns[fid] = (unsigned short)getfnidx(cp);
 }
 

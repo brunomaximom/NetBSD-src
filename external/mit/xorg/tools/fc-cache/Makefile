@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.19 2022/02/24 06:34:32 martin Exp $
+#	$NetBSD: Makefile,v 1.21 2023/01/19 17:07:38 martin Exp $
 
 .include <bsd.hostinit.mk>
 
@@ -89,14 +89,15 @@ SRCS.expat=	xmlparse.c xmltok.c xmlrole.c
 SRCS=	${SRCS.fc-cache} ${SRCS.fontconfig} ${SRCS.freetype} ${SRCS.expat}
 
 # XXX FONTCONFIG_PATH was arbitrarily chosen
-# XXX ALIGNOF_VOID_P=8 not valid for 32 bit, but probably ok?
 HOST_CPPFLAGS=	-DFONTCONFIG_PATH='"${DESTDIR}/etc/X11/fonts"' \
 		-DFC_DEFAULT_FONTS='"${X11FONTDIR}/Type1"' \
 		-DFC_TEMPLATEDIR='"${DESTDIR}${X11FONTDIR}"' \
 		-DFC_CACHEDIR='"${DESTDIR}/var/cache/fontconfig"' \
+		-DCONFIGDIR='"${DESTDIR}/etc/fonts/conf.d"' \
 		-DFC_GPERF_SIZE_T=unsigned \
 		-DFC_NO_MT=1 \
-		-DALIGNOF_VOID_P=8 \
+		-DALIGNOF_VOID_P=${PTRSIZE} \
+		-DSIZEOF_VOID_P=${PTRSIZE} \
 		-DHAVE_FT_BITMAP_SIZE_Y_PPEM \
 		-DHAVE_FT_GET_BDF_PROPERTY \
 		-DHAVE_FT_GET_NEXT_CHAR \
@@ -110,7 +111,8 @@ HOST_CPPFLAGS=	-DFONTCONFIG_PATH='"${DESTDIR}/etc/X11/fonts"' \
 		-DHAVE_SYS_TYPES_H -DHAVE_FCNTL_H -DHAVE_SYS_STAT_H \
 		-DHAVE_MKSTEMP \
 		-DHAVE_SCANDIR \
-		-DFLEXIBLE_ARRAY_MEMBER="/**/"
+		-DFLEXIBLE_ARRAY_MEMBER="/**/" \
+		-DHAVE_DIRENT_H -DHAVE_UNISTD_H
 HOST_CPPFLAGS+=	-DFT_CONFIG_OPTION_DISABLE_BZIP2
 HOST_CPPFLAGS+=	-I${FONTCONFIG} -I${FREETYPE} \
 		-I${FREETYPE}/include -I${FREETYPE}/include/freetype \
@@ -129,4 +131,11 @@ LDADD=	-lz
 .include "../../lib/fontconfig/src/Makefile.fcarch"
 
 .include <bsd.x11.mk>
+
+.if empty(X11FLAGS.SERVER:M-D_XSERVER64)
+PTRSIZE=	4
+.else
+PTRSIZE=	8
+.endif
+
 .include <bsd.hostprog.mk>

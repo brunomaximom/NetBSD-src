@@ -1,4 +1,4 @@
-/*	$NetBSD: pass5.c,v 1.55 2022/11/17 06:40:38 chs Exp $	*/
+/*	$NetBSD: pass5.c,v 1.57 2023/01/08 05:25:24 chs Exp $	*/
 
 /*
  * Copyright (c) 1980, 1986, 1993
@@ -34,7 +34,7 @@
 #if 0
 static char sccsid[] = "@(#)pass5.c	8.9 (Berkeley) 4/28/95";
 #else
-__RCSID("$NetBSD: pass5.c,v 1.55 2022/11/17 06:40:38 chs Exp $");
+__RCSID("$NetBSD: pass5.c,v 1.57 2023/01/08 05:25:24 chs Exp $");
 #endif
 #endif /* not lint */
 
@@ -59,12 +59,16 @@ void print_bmap(u_char *,u_int32_t);
 void
 pass5(void)
 {
-	int c, blk, frags, basesize, sumsize, mapsize, cssize;
-	int inomapsize, blkmapsize;
+	int blk, frags, basesize, sumsize, mapsize, cssize;
+	uint32_t inomapsize, blkmapsize;
+	uint32_t c;
 	struct fs *fs = sblock;
 	daddr_t dbase, dmax;
 	daddr_t d;
-	long i, j, k;
+	uint32_t i;
+	int32_t j;
+	int k;
+	ino_t inum;
 	struct csum *cs;
 	struct csum_total cstotal;
 	struct inodesc idesc[4];
@@ -290,15 +294,15 @@ pass5(void)
 		newcg->cg_cs.cs_nffree = 0;
 		newcg->cg_cs.cs_nbfree = 0;
 		newcg->cg_cs.cs_nifree = fs->fs_ipg;
-		if (cg->cg_rotor >= 0 && cg->cg_rotor < newcg->cg_ndblk)
+		if (cg->cg_rotor < newcg->cg_ndblk)
 			newcg->cg_rotor = cg->cg_rotor;
 		else
 			newcg->cg_rotor = 0;
-		if (cg->cg_frotor >= 0 && cg->cg_frotor < newcg->cg_ndblk)
+		if (cg->cg_frotor < newcg->cg_ndblk)
 			newcg->cg_frotor = cg->cg_frotor;
 		else
 			newcg->cg_frotor = 0;
-		if (cg->cg_irotor >= 0 && cg->cg_irotor < fs->fs_ipg)
+		if (cg->cg_irotor < fs->fs_ipg)
 			newcg->cg_irotor = cg->cg_irotor;
 		else
 			newcg->cg_irotor = 0;
@@ -316,9 +320,9 @@ pass5(void)
 		if (!is_ufs2 && ((fs->fs_old_flags & FS_FLAGS_UPDATED) == 0) &&
 		    fs->fs_old_postblformat == FS_42POSTBLFMT)
 			ocg->cg_magic = CG_MAGIC;
-		j = fs->fs_ipg * c;
-		for (i = 0; i < fs->fs_ipg; j++, i++) {
-			info = inoinfo(j);
+		inum = fs->fs_ipg * c;
+		for (i = 0; i < fs->fs_ipg; inum++, i++) {
+			info = inoinfo(inum);
 			switch (info->ino_state) {
 
 			case USTATE:
@@ -337,14 +341,14 @@ pass5(void)
 				break;
 
 			default:
-				if ((ino_t)j < UFS_ROOTINO)
+				if (inum < UFS_ROOTINO)
 					break;
-				errexit("BAD STATE %d FOR INODE I=%ld",
-				    info->ino_state, (long)j);
+				errexit("BAD STATE %d FOR INODE I=%ju",
+				    info->ino_state, (uintmax_t)inum);
 			}
 		}
 		if (c == 0)
-			for (i = 0; i < (long)UFS_ROOTINO; i++) {
+			for (i = 0; i < UFS_ROOTINO; i++) {
 				setbit(cg_inosused(newcg, 0), i);
 				newcg->cg_cs.cs_nifree--;
 			}
@@ -449,7 +453,7 @@ pass5(void)
 						continue;
 					if (cg_inosused(cg, 0)[i] & (1 << k))
 						continue;
-					pwarn("ALLOCATED INODE %ld "
+					pwarn("ALLOCATED INODE %u "
 					    "MARKED FREE\n",
 					    c * fs->fs_ipg + i * 8 + k);
 				}
@@ -463,7 +467,7 @@ pass5(void)
 						continue;
 					if (cg_inosused(cg, 0)[i] & (1 << k))
 						continue;
-					pwarn("ALLOCATED FRAG %ld "
+					pwarn("ALLOCATED FRAG %u "
 					    "MARKED FREE\n",
 					    c * fs->fs_fpg + i * 8 + k);
 				}

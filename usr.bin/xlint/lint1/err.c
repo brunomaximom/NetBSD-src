@@ -1,4 +1,4 @@
-/*	$NetBSD: err.c,v 1.184 2022/10/01 09:42:40 rillig Exp $	*/
+/*	$NetBSD: err.c,v 1.186 2023/01/21 13:07:22 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,7 +37,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID)
-__RCSID("$NetBSD: err.c,v 1.184 2022/10/01 09:42:40 rillig Exp $");
+__RCSID("$NetBSD: err.c,v 1.186 2023/01/21 13:07:22 rillig Exp $");
 #endif
 
 #include <limits.h>
@@ -405,6 +405,7 @@ static const char *const msgs[] = {
 	"redeclaration of '%s' with type '%s', expected '%s'",	      /* 347 */
 	"maximum value %d of '%s' does not match maximum array index %d", /* 348 */
 	"non type argument to alignof is a GCC extension",	      /* 349 */
+	"'_Atomic' requires C11 or later",			      /* 350 */
 };
 
 static bool	is_suppressed[sizeof(msgs) / sizeof(msgs[0])];
@@ -750,7 +751,7 @@ enable_queries(const char *arg)
 		if (!(ch_isdigit(s[0]) && end == e &&
 		      id < sizeof(queries) / sizeof(queries[0]) &&
 		      queries[id][0] != '\0'))
-			errx(1, "invalid query ID '%s'", s);
+			errx(1, "invalid query ID '%.*s'", (int)(e - s), s);
 
 		any_query_enabled = true;
 		is_query_enabled[id] = true;

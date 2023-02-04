@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.327 2022/09/25 12:32:56 rillig Exp $
+# $NetBSD: Makefile,v 1.331 2023/01/24 00:24:02 sjg Exp $
 #
 # Unit tests for make(1)
 #
@@ -25,10 +25,6 @@
 #
 # Any added files must also be added to src/distrib/sets/lists/tests/mi.
 # To do that, just run "make sync-mi" in this directory.
-#
-# A few *.mk files are helper files for other tests (such as include-sub.mk)
-# and are thus not added to TESTS.  Such files must be ignored in
-# src/tests/usr.bin/make/t_make.sh.
 #
 
 .MAIN: all
@@ -324,6 +320,7 @@ TESTS+=		ternary
 TESTS+=		unexport
 TESTS+=		unexport-env
 TESTS+=		use-inference
+TESTS+=		var-readonly
 TESTS+=		var-scope
 TESTS+=		var-scope-cmdline
 TESTS+=		var-scope-env
@@ -527,6 +524,7 @@ SED_CMDS.sh-dots+=		-e 's,^make: exec(\(.*\)) failed (.*)$$,<not found: \1>,'
 SED_CMDS.sh-dots+=		-e 's,^\(\*\*\* Error code \)[1-9][0-9]*,\1<nonzero>,'
 SED_CMDS.sh-errctl=		${STD_SED_CMDS.dj}
 SED_CMDS.sh-flags=		${STD_SED_CMDS.hide-from-output}
+SED_CMDS.sh-leading-hyphen=	${STD_SED_CMDS.shell}
 SED_CMDS.suff-main+=		${STD_SED_CMDS.dg1}
 SED_CMDS.suff-main-several+=	${STD_SED_CMDS.dg1}
 SED_CMDS.suff-transform-debug+=	${STD_SED_CMDS.dg1}
@@ -540,7 +538,7 @@ SED_CMDS.varname-dot-parsefile=	-e '/in some cases/ s,^make: "[^"]*,make: "<norm
 SED_CMDS.varname-dot-shell=	-e 's, = /[^ ]*, = (details omitted),g'
 SED_CMDS.varname-dot-shell+=	-e 's,"/[^" ]*","(details omitted)",g'
 SED_CMDS.varname-dot-shell+=	-e 's,\[/[^] ]*\],[(details omitted)],g'
-SED_CMDS.varname-empty=		${.OBJDIR .PARSEDIR .PATH .SHELL:L:@v@-e '/\\$v/d'@}
+SED_CMDS.varname-empty=		${.OBJDIR .PARSEDIR .PATH .SHELL .SYSPATH:L:@v@-e '/\\$v/d'@}
 
 # Some tests need an additional round of postprocessing.
 POSTPROC.depsrc-wait=		sed -e '/^---/d' -e 's,^\(: Making 3[abc]\)[123]$$,\1,'
@@ -570,6 +568,7 @@ STD_SED_CMDS.dg1+=	-e 's,^\(\.MAKE\.[A-Z_]* *=\) .*,\1 <details omitted>,'
 STD_SED_CMDS.dg1+=	-e 's,^\(MACHINE[_ARCH]* *=\) .*,\1 <details omitted>,'
 STD_SED_CMDS.dg1+=	-e 's,^\(MAKE *=\) .*,\1 <details omitted>,'
 STD_SED_CMDS.dg1+=	-e 's,^\(\.SHELL *=\) .*,\1 <details omitted>,'
+STD_SED_CMDS.dg1+=	-e '/\.SYSPATH/d'
 
 STD_SED_CMDS.dg2=	${STD_SED_CMDS.dg1}
 STD_SED_CMDS.dg2+=	-e 's,\(last modified\) ..:..:.. ... ..\, ....,\1 <timestamp>,'
@@ -613,9 +612,11 @@ STD_SED_CMDS.hide-from-output= \
 #	bash 5.1.0	bash: line 1: /nonexistent: No such file or directory
 #	dash		dash: 1: cannot open /nonexistent: No such file
 #
+STD_SED_CMDS.shell+=		-e 's,^${.SHELL},${.SHELL:T},'
 STD_SED_CMDS.shell+=		-e 's,^${.SHELL:T}: line [0-9][0-9]*: ,,'
 STD_SED_CMDS.shell+=		-e 's,^${.SHELL:T}: [0-9][0-9]*: ,,'
 STD_SED_CMDS.shell+=		-e 's,^${.SHELL:T}: ,,'
+STD_SED_CMDS.shell+=		-e 's,: command not found,: not found,'
 
 # The actual error messages for a failed regcomp or regexec differ between the
 # implementations.

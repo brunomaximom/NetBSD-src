@@ -1,4 +1,4 @@
-/*	$NetBSD: make.h,v 1.308 2022/10/10 21:17:25 rillig Exp $	*/
+/*	$NetBSD: make.h,v 1.311 2023/01/26 20:48:17 sjg Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -616,7 +616,6 @@ extern pid_t myPid;
 #define MAKE_MAKEFILES	".MAKE.MAKEFILES"	/* all loaded makefiles */
 #define MAKE_LEVEL	".MAKE.LEVEL"		/* recursion level */
 #define MAKE_MAKEFILE_PREFERENCE ".MAKE.MAKEFILE_PREFERENCE"
-#define MAKE_DEPENDFILE	".MAKE.DEPENDFILE"	/* .depend */
 #define MAKE_MODE	".MAKE.MODE"
 #ifndef MAKE_LEVEL_ENV
 # define MAKE_LEVEL_ENV	"MAKELEVEL"
@@ -1027,10 +1026,12 @@ void Var_ReexportVars(void);
 void Var_Export(VarExportMode, const char *);
 void Var_ExportVars(const char *);
 void Var_UnExport(bool, const char *);
+void Var_ReadOnly(const char *, bool);
 
 void Global_Set(const char *, const char *);
 void Global_Append(const char *, const char *);
 void Global_Delete(const char *);
+void Global_Set_ReadOnly(const char *, const char *);
 
 /* util.c */
 typedef void (*SignalProc)(int);

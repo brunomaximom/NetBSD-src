@@ -1,4 +1,4 @@
-/*	$NetBSD: var.c,v 1.1036 2022/12/05 23:41:24 rillig Exp $	*/
+/*	$NetBSD: var.c,v 1.1039 2023/01/26 20:48:17 sjg Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -139,7 +139,7 @@
 #include "metachar.h"
 
 /*	"@(#)var.c	8.3 (Berkeley) 3/19/94" */
-MAKE_RCSID("$NetBSD: var.c,v 1.1036 2022/12/05 23:41:24 rillig Exp $");
+MAKE_RCSID("$NetBSD: var.c,v 1.1039 2023/01/26 20:48:17 sjg Exp $");
 
 /*
  * Variables are defined using one of the VAR=value assignments.  Their
@@ -192,6 +192,7 @@ typedef struct Var {
 	 * The variable value cannot be changed anymore, and the variable
 	 * cannot be deleted.  Any attempts to do so are silently ignored,
 	 * they are logged with -dv though.
+	 * Use .[NO]READONLY: to adjust.
 	 *
 	 * See VAR_SET_READONLY.
 	 */
@@ -1077,6 +1078,12 @@ Global_Delete(const char *name)
 	Var_Delete(SCOPE_GLOBAL, name);
 }
 
+void
+Global_Set_ReadOnly(const char *name, const char *value)
+{
+	Var_SetWithFlags(SCOPE_GLOBAL, name, value, VAR_SET_READONLY);
+}
+
 /*
  * Append the value to the named variable.
  *
@@ -1219,6 +1226,23 @@ Var_Value(GNode *scope, const char *name)
 	VarFreeShortLived(v);
 
 	return FStr_InitOwn(value);
+}
+
+/*
+ * set readOnly attribute of specified var if it exists
+ */
+void
+Var_ReadOnly(const char *name, bool bf)
+{
+	Var *v;
+
+	v = VarFind(name, SCOPE_GLOBAL, false);
+	if (v == NULL) {
+		DEBUG1(VAR, "Var_ReadOnly: %s not found\n", name);
+		return;
+	}
+	v->readOnly = bf;
+	DEBUG2(VAR, "Var_ReadOnly: %s %s\n", name, bf ? "true" : "false");
 }
 
 /*

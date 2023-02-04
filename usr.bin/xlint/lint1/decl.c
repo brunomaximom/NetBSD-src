@@ -1,4 +1,4 @@
-/* $NetBSD: decl.c,v 1.302 2022/10/01 10:04:06 rillig Exp $ */
+/* $NetBSD: decl.c,v 1.305 2023/01/29 18:13:56 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -38,7 +38,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID)
-__RCSID("$NetBSD: decl.c,v 1.302 2022/10/01 10:04:06 rillig Exp $");
+__RCSID("$NetBSD: decl.c,v 1.305 2023/01/29 18:13:56 rillig Exp $");
 #endif
 
 #include <sys/param.h>
@@ -560,7 +560,7 @@ dcs_add_qualifier(tqual_t q)
 		}
 		dcs->d_volatile = true;
 	} else {
-		lint_assert(q == RESTRICT || q == THREAD);
+		lint_assert(q == RESTRICT || q == THREAD || q == ATOMIC);
 		/* Silently ignore these qualifiers. */
 	}
 }
@@ -598,9 +598,9 @@ end_declaration_level(void)
 	dcs = di->d_enclosing;
 
 	switch (di->d_kind) {
-	case DK_MOS:
-	case DK_MOU:
-	case DK_ENUM_CONST:
+	case DK_STRUCT_MEMBER:
+	case DK_UNION_MEMBER:
+	case DK_ENUM_CONSTANT:
 		/*
 		 * Symbols declared in (nested) structs or enums are
 		 * part of the next level (they are removed from the
@@ -639,7 +639,7 @@ end_declaration_level(void)
 		check_usage(di);
 		/* FALLTHROUGH */
 	case DK_PROTO_ARG:
-		/* usage of arguments will be checked by funcend() */
+		/* usage of arguments will be checked by end_function() */
 		rmsyms(di->d_dlsyms);
 		break;
 	case DK_EXTERN:
@@ -948,7 +948,7 @@ check_type(sym_t *sym)
 		t = tp->t_tspec;
 		/*
 		 * If this is the type of an old-style function definition,
-		 * a better warning is printed in funcdef().
+		 * a better warning is printed in begin_function().
 		 */
 		if (t == FUNC && !tp->t_proto &&
 		    !(to == NOTSPEC && sym->s_osdef)) {
@@ -1095,7 +1095,7 @@ declare_bit_field(sym_t *dsym, tspec_t *inout_t, type_t **const inout_tp)
 		error(37);
 		tp->t_flen = size_in_bits(t);
 	}
-	if (dsym->s_scl == MOU) {
+	if (dsym->s_scl == UNION_MEMBER) {
 		/* bit-field in union is very unusual */
 		warning(41);
 		dsym->s_type->t_bitfield = false;
@@ -1151,7 +1151,7 @@ declarator_1_struct_union(sym_t *dsym)
 		}
 	}
 
-	if (dcs->d_kind == DK_MOU) {
+	if (dcs->d_kind == DK_UNION_MEMBER) {
 		o = dcs->d_offset_in_bits;
 		dcs->d_offset_in_bits = 0;
 	}
@@ -1167,7 +1167,7 @@ declarator_1_struct_union(sym_t *dsym)
 		dsym->u.s_member.sm_offset_in_bits = dcs->d_offset_in_bits;
 		dcs->d_offset_in_bits += sz;
 	}
-	if (dcs->d_kind == DK_MOU && o > dcs->d_offset_in_bits)
+	if (dcs->d_kind == DK_UNION_MEMBER && o > dcs->d_offset_in_bits)
 		dcs->d_offset_in_bits = o;
 
 	check_function_definition(dsym, false);
@@ -1215,7 +1215,7 @@ set_bit_field_width(sym_t *dsym, int len)
 		dsym = block_zero_alloc(sizeof(*dsym));
 		dsym->s_name = unnamed;
 		dsym->s_kind = FMEMBER;
-		dsym->s_scl = MOS;
+		dsym->s_scl = STRUCT_MEMBER;
 		dsym->s_type = gettyp(UINT);
 		dsym->s_block_level = -1;
 	}
@@ -1555,13 +1555,15 @@ declarator_name(sym_t *sym)
 	}
 
 	switch (dcs->d_kind) {
-	case DK_MOS:
-	case DK_MOU:
+	case DK_STRUCT_MEMBER:
+	case DK_UNION_MEMBER:
 		/* Set parent */
 		sym->u.s_member.sm_sou_type = dcs->d_tagtyp->t_str;
 		sym->s_def = DEF;
 		/* XXX: Where is sym->u.s_member.sm_offset_in_bits set? */
-		sc = dcs->d_kind == DK_MOS ? MOS : MOU;
+		sc = dcs->d_kind == DK_STRUCT_MEMBER
+		    ? STRUCT_MEMBER
+		    : UNION_MEMBER;
 		break;
 	case DK_EXTERN:
 		/*

@@ -46,7 +46,7 @@
 
 #ifdef _KERNEL
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: npf_tableset.c,v 1.38 2022/04/09 23:38:33 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: npf_tableset.c,v 1.41 2023/01/23 13:40:04 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -101,7 +101,7 @@ struct npf_table {
 
 	/*
 	 * Table ID, type and lock.  The ID may change during the
-	 * config reload, it is protected by the npf->config_lock.
+	 * config reload, it is protected by the npf_t::config_lock.
 	 */
 	int			t_type;
 	unsigned		t_id;
@@ -160,10 +160,14 @@ npf_tableset_destroy(npf_tableset_t *ts)
 
 		if (t == NULL)
 			continue;
+#ifndef __HAVE_ATOMIC_AS_MEMBAR
 		membar_release();
+#endif
 		if (atomic_dec_uint_nv(&t->t_refcnt) > 0)
 			continue;
+#ifndef __HAVE_ATOMIC_AS_MEMBAR
 		membar_acquire();
+#endif
 		npf_table_destroy(t);
 	}
 	kmem_free(ts, NPF_TABLESET_SIZE(ts->ts_nitems));
@@ -762,15 +766,17 @@ table_ent_copyout(const npf_addr_t *addr, const int alen, npf_netmask_t mask,
 }
 
 static int
-table_generic_list(const npf_table_t *t, void *ubuf, size_t len)
+table_generic_list(npf_table_t *t, void *ubuf, size_t len)
 {
 	npf_tblent_t *ent;
 	size_t off = 0;
 	int error = 0;
 
 	LIST_FOREACH(ent, &t->t_list, te_listent) {
+		mutex_exit(&t->t_lock);
 		error = table_ent_copyout(&ent->te_addr,
 		    ent->te_alen, ent->te_preflen, ubuf, len, &off);
+		mutex_enter(&t->t_lock);
 		if (error)
 			break;
 	}

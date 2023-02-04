@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.35 2022/12/25 17:25:22 christos Exp $
+#	$NetBSD: Makefile,v 1.37 2023/01/18 12:52:55 christos Exp $
 
 .include <bsd.hostinit.mk>
 
@@ -11,25 +11,15 @@ BRANDING?=	\
 	--with-bugurl="http://www.NetBSD.org/support/send-pr.html" \
 	--with-lib-path="=/usr/lib" --with-sysroot
 
-CONFIGURE_ARGS=	--target=${MACHINE_GNU_PLATFORM} --disable-nls \
+BASE_CONFIGURE_ARGS= \
+	--target=${MACHINE_GNU_PLATFORM} \
+	--enable-initfini-array=yes \
+	--enable-default-execstack=no \
+	${BRANDING}
+
+CONFIGURE_ARGS=	--disable-nls --disable-werror \
 		--program-transform-name="s,^,${MACHINE_GNU_PLATFORM}-," \
-		--disable-werror --enable-initfini-array=yes \
-		${BRANDING}
-
-.if exists(${GNUHOSTDIST}/gas/config/m68k-parse.c)
-M68K_PARSE=${GNUHOSTDIST}/gas/config/m68k-parse.c
-.elif exists(${GNUHOSTDIST}/gas/m68k-parse.c) 
-M68K_PARSE=${GNUHOSTDIST}/gas/m68k-parse.c
-.else
-.error "Can't find m68k-parse.c
-.endif
-
-build/gas/m68k-parse.c: ${M68K_PARSE}
-	@mkdir build 2>/dev/null || true
-	@mkdir build/gas 2>/dev/null || true
-	cat ${M68K_PARSE} > ${.TARGET}
-
-.configure_done: build/gas/m68k-parse.c
+		${BASE_CONFIGURE_ARGS}
 
 MAKE_ARGS=	MACHINE= MAKEINFO=${TOOL_MAKEINFO:Q}
 
@@ -76,9 +66,7 @@ native-binutils: .native/.configure_done
 			${HOST_SH} ${GNUHOSTDIST}/configure \
 			--build=`${GNUHOSTDIST}/config.guess` \
 			--host=${MACHINE_GNU_PLATFORM} \
-			--target=${MACHINE_GNU_PLATFORM} \
-			--enable-initfini-array=yes \
-			${BRANDING} \
+			${BASE_CONFIGURE_ARGS} \
 		)
 	PATH=${TOOLDIR}/bin:$$PATH; export PATH; \
 		(cd .native && ${MAKE} configure-host)

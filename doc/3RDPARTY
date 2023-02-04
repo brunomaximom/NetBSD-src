@@ -1,4 +1,4 @@
-#	$NetBSD: 3RDPARTY,v 1.1905 2022/12/11 17:58:42 christos Exp $
+#	$NetBSD: 3RDPARTY,v 1.1909 2023/01/25 21:45:37 christos Exp $
 #
 # This file contains a list of the software that has been integrated into
 # NetBSD where we are not the primary maintainer.
@@ -120,12 +120,12 @@ Notes:
 bc includes dc, both of which are in the NetBSD tree.
 
 Package:	bind [named and utils]
-Version:	9.16.33/MPL
-Current Vers:	9.16.33/MPL 9.19.5/MPL
+Version:	9.16.37/MPL
+Current Vers:	9.16.37/MPL 9.19.9/MPL
 Maintainer:	ISC
 Archive Site:	ftp://ftp.isc.org/isc/bind9/
 Home Page:	http://www.isc.org/software/bind/
-Date:		2022-09-23
+Date:		2023-01-25
 Mailing List:	https://lists.isc.org/mailman/listinfo/bind-announce
 Mailing List:	https://lists.isc.org/mailman/listinfo/bind-users
 Responsible:	christos
@@ -498,12 +498,12 @@ When updating GDB, it is imperative to test that:
 	  ("options KGDB") works correctly.
 
 Package:	binutils
-Version:	2.34
-Current Vers:	2.39
+Version:	2.34/2.39
+Current Vers:	2.40
 Maintainer:	FSF
 Archive Site:	ftp://ftp.gnu.org/gnu/binutils/
 Home Page:	https://www.gnu.org/software/binutils/
-Date:		2022-08-06
+Date:		2023-01-15
 Mailing List:	bug-gnu-utils@gnu.org
 Responsible:	thorpej, mrg
 License:	GPLv3, LGPLv3, GPLv2, LGPLv2, BSD
@@ -1373,11 +1373,11 @@ purposes.
 
 Package:	tmux
 Version:	3.2a
-Current Vers:	3.3
+Current Vers:	3.3a
 Maintainer:	Nicholas Marriott <nicholas.marriott@gmail.com>
 Archive site:	https://github.com/tmux/tmux
 Home page:	http://tmux.github.io
-Date: 		2022-06-01
+Date: 		2022-06-09
 Mailing List:	tmux-users@googlegroups.com
 Responsible:	christos
 License:	BSD
@@ -1515,11 +1515,11 @@ Notes:
 
 Package:	xz
 Version:	5.2.4
-Current Vers:	5.2.8
+Current Vers:	5.4.1
 Maintainer:	Lasse Collin <lasse.collin@tukanni.org>
 Archive Site:	http://tukaani.org/xz/
 Home Page:	http://tukaani.org/xz/
-Date: 		2020-06-13
+Date: 		2023-01-12
 Responsible:	joerg
 License:	public-domain
 Location:	external/public-domain/xz/dist

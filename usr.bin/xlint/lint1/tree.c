@@ -1,4 +1,4 @@
-/*	$NetBSD: tree.c,v 1.484 2022/11/30 20:59:28 rillig Exp $	*/
+/*	$NetBSD: tree.c,v 1.504 2023/01/29 18:16:48 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,7 +37,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID)
-__RCSID("$NetBSD: tree.c,v 1.484 2022/11/30 20:59:28 rillig Exp $");
+__RCSID("$NetBSD: tree.c,v 1.504 2023/01/29 18:16:48 rillig Exp $");
 #endif
 
 #include <float.h>
@@ -388,7 +388,7 @@ static void
 fallback_symbol(sym_t *sym)
 {
 
-	if (fallback_symbol_strict_bool(sym))
+	if (Tflag && fallback_symbol_strict_bool(sym))
 		return;
 
 	if (block_level > 0 && (strcmp(sym->s_name, "__FUNCTION__") == 0 ||
@@ -404,8 +404,10 @@ fallback_symbol(sym_t *sym)
 		if (!allow_c99)
 			/* __func__ is a C99 feature */
 			warning(317);
-		sym->s_type = block_derive_type(gettyp(CHAR), PTR);
+		/* C11 6.4.2.2 */
+		sym->s_type = block_derive_type(gettyp(CHAR), ARRAY);
 		sym->s_type->t_const = true;
+		sym->s_type->t_dim = (int)strlen(funcsym->s_name) + 1;
 		return;
 	}
 
@@ -556,6 +558,50 @@ build_string(strg_t *strg)
 }
 
 /*
+ * Return whether all struct/union members with the same name have the same
+ * type and offset.
+ */
+static bool
+all_members_compatible(const sym_t *msym)
+{
+	for (const sym_t *csym = msym;
+	     csym != NULL; csym = csym->s_symtab_next) {
+		if (!is_member(csym))
+			continue;
+		if (strcmp(msym->s_name, csym->s_name) != 0)
+			continue;
+
+		for (const sym_t *sym = csym->s_symtab_next;
+		     sym != NULL; sym = sym->s_symtab_next) {
+
+			if (!is_member(sym))
+				continue;
+			if (strcmp(csym->s_name, sym->s_name) != 0)
+				continue;
+			if (csym->u.s_member.sm_offset_in_bits !=
+			    sym->u.s_member.sm_offset_in_bits)
+				return false;
+
+			bool w = false;
+			if (!types_compatible(csym->s_type, sym->s_type,
+			    false, false, &w) && !w)
+				return false;
+			if (csym->s_bitfield != sym->s_bitfield)
+				return false;
+			if (csym->s_bitfield) {
+				type_t *tp1 = csym->s_type;
+				type_t *tp2 = sym->s_type;
+				if (tp1->t_flen != tp2->t_flen)
+					return false;
+				if (tp1->t_foffs != tp2->t_foffs)
+					return false;
+			}
+		}
+	}
+	return true;
+}
+
+/*
  * Returns a symbol which has the same name as the msym argument and is a
  * member of the struct or union specified by the tn argument.
  */
@@ -564,8 +610,6 @@ struct_or_union_member(tnode_t *tn, op_t op, sym_t *msym)
 {
 	struct_or_union	*str;
 	type_t	*tp;
-	sym_t	*sym, *csym;
-	bool	eq;
 	tspec_t	t;
 
 	/*
@@ -577,7 +621,7 @@ struct_or_union_member(tnode_t *tn, op_t op, sym_t *msym)
 		error(101, type_name(tn->tn_type), msym->s_name);
 		rmsym(msym);
 		msym->s_kind = FMEMBER;
-		msym->s_scl = MOS;
+		msym->s_scl = STRUCT_MEMBER;
 
 		struct_or_union *sou = expr_zero_alloc(sizeof(*sou));
 		sou->sou_tag = expr_zero_alloc(sizeof(*sou->sou_tag));
@@ -607,7 +651,8 @@ struct_or_union_member(tnode_t *tn, op_t op, sym_t *msym)
 	 * If this struct/union has a member with the name of msym, return it.
 	 */
 	if (str != NULL) {
-		for (sym = msym; sym != NULL; sym = sym->s_symtab_next) {
+		for (sym_t *sym = msym;
+		     sym != NULL; sym = sym->s_symtab_next) {
 			if (!is_member(sym))
 				continue;
 			if (sym->u.s_member.sm_sou_type != str)
@@ -618,56 +663,7 @@ struct_or_union_member(tnode_t *tn, op_t op, sym_t *msym)
 		}
 	}
 
-	/*
-	 * Set eq to false if there are struct/union members with the same
-	 * name and different types and/or offsets.
-	 */
-	eq = true;
-	for (csym = msym; csym != NULL; csym = csym->s_symtab_next) {
-		if (csym->s_scl != MOS && csym->s_scl != MOU)
-			continue;
-		if (strcmp(msym->s_name, csym->s_name) != 0)
-			continue;
-		for (sym = csym->s_symtab_next; sym != NULL;
-		    sym = sym->s_symtab_next) {
-			bool w;
-
-			if (sym->s_scl != MOS && sym->s_scl != MOU)
-				continue;
-			if (strcmp(csym->s_name, sym->s_name) != 0)
-				continue;
-			if (csym->u.s_member.sm_offset_in_bits !=
-			    sym->u.s_member.sm_offset_in_bits) {
-				eq = false;
-				break;
-			}
-			w = false;
-			eq = types_compatible(csym->s_type, sym->s_type,
-			    false, false, &w) && !w;
-			if (!eq)
-				break;
-			if (csym->s_bitfield != sym->s_bitfield) {
-				eq = false;
-				break;
-			}
-			if (csym->s_bitfield) {
-				type_t	*tp1, *tp2;
-
-				tp1 = csym->s_type;
-				tp2 = sym->s_type;
-				if (tp1->t_flen != tp2->t_flen) {
-					eq = false;
-					break;
-				}
-				if (tp1->t_foffs != tp2->t_foffs) {
-					eq = false;
-					break;
-				}
-			}
-		}
-		if (!eq)
-			break;
-	}
+	bool eq = all_members_compatible(msym);
 
 	/*
 	 * Now handle the case in which the left operand refers really
@@ -1167,6 +1163,10 @@ typeok_shr(const mod_t *mp,
 
 	/* operands have integer types (checked in typeok) */
 	if (pflag && !is_uinteger(olt)) {
+		integer_constraints lc = ic_expr(ln);
+		if (!ic_maybe_signed(ln->tn_type, &lc))
+			return;
+
 		/*
 		 * The left operand is signed. This means that
 		 * the operation is (possibly) nonportable.
@@ -2058,12 +2058,14 @@ check_enum_array_index(const tnode_t *ln, const tnode_t *rn)
 		return;
 
 	/*
-	 * If the largest enum constant is named '*_NUM_*', it is typically
-	 * not part of the allowed enum values but a marker for the number
-	 * of actual enum values.
+	 * If the name of the largest enum constant contains 'MAX' or 'NUM',
+	 * that constant is typically not part of the allowed enum values but
+	 * a marker for the number of actual enum values.
 	 */
 	if (max_enum_value == max_array_index + 1 &&
-	    (strstr(max_ec->s_name, "NUM") != NULL ||
+	    (strstr(max_ec->s_name, "MAX") != NULL ||
+	     strstr(max_ec->s_name, "max") != NULL ||
+	     strstr(max_ec->s_name, "NUM") != NULL ||
 	     strstr(max_ec->s_name, "num") != NULL))
 		return;
 
@@ -2078,67 +2080,71 @@ check_enum_array_index(const tnode_t *ln, const tnode_t *rn)
 static tnode_t *
 new_tnode(op_t op, bool sys, type_t *type, tnode_t *ln, tnode_t *rn)
 {
-	tnode_t	*ntn;
-	tspec_t	t;
-#if 0 /* not yet */
-	size_t l;
-	uint64_t rnum;
-#endif
 
-	ntn = expr_alloc_tnode();
-
+	tnode_t *ntn = expr_alloc_tnode();
 	ntn->tn_op = op;
 	ntn->tn_type = type;
 	ntn->tn_sys = sys;
 	ntn->tn_left = ln;
 	ntn->tn_right = rn;
 
-	switch (op) {
-#if 0 /* not yet */
-	case SHR:
-		if (rn->tn_op != CON)
-			break;
-		rnum = rn->tn_val->v_quad;
-		l = type_size_in_bits(ln->tn_type) / CHAR_SIZE;
-		t = ln->tn_type->t_tspec;
-		switch (l) {
-		case 8:
-			if (rnum >= 56)
-				t = UCHAR;
-			else if (rnum >= 48)
-				t = USHORT;
-			else if (rnum >= 32)
-				t = UINT;
-			break;
-		case 4:
-			if (rnum >= 24)
-				t = UCHAR;
-			else if (rnum >= 16)
-				t = USHORT;
-			break;
-		case 2:
-			if (rnum >= 8)
-				t = UCHAR;
-			break;
-		default:
-			break;
-		}
-		if (t != ln->tn_type->t_tspec)
-			ntn->tn_type->t_tspec = t;
-		break;
-#endif
-	case INDIR:
-	case FSEL:
+	if (op == INDIR || op == FSEL) {
 		lint_assert(ln->tn_type->t_tspec == PTR);
-		t = ln->tn_type->t_subt->t_tspec;
+		tspec_t t = ln->tn_type->t_subt->t_tspec;
 		if (t != FUNC && t != VOID)
 			ntn->tn_lvalue = true;
-		break;
-	default:
-		break;
 	}
 
 	return ntn;
+}
+
+/* In traditional C, keep unsigned and promote FLOAT to DOUBLE. */
+static tspec_t
+promote_trad(tspec_t t)
+{
+
+	if (t == UCHAR || t == USHORT)
+		return UINT;
+	if (t == CHAR || t == SCHAR || t == SHORT)
+		return INT;
+	if (t == FLOAT)
+		return DOUBLE;
+	if (t == ENUM)
+		return INT;
+	return t;
+}
+
+/*
+ * C99 6.3.1.1p2 requires for types with lower rank than int that "If an int
+ * can represent all the values of the original type, the value is converted
+ * to an int; otherwise it is converted to an unsigned int", and that "All
+ * other types are unchanged by the integer promotions".
+ */
+static tspec_t
+promote_c90(const tnode_t *tn, tspec_t t, bool farg)
+{
+	if (tn->tn_type->t_bitfield) {
+		unsigned int len = tn->tn_type->t_flen;
+		if (len < size_in_bits(INT))
+			return INT;
+		if (len == size_in_bits(INT))
+			return is_uinteger(t) ? UINT : INT;
+		return t;
+	}
+
+	if (t == CHAR || t == SCHAR)
+		return INT;
+	if (t == UCHAR)
+		return size_in_bits(CHAR) < size_in_bits(INT) ? INT : UINT;
+	if (t == SHORT)
+		return INT;
+	if (t == USHORT)
+		return size_in_bits(SHORT) < size_in_bits(INT) ? INT : UINT;
+	if (t == ENUM)
+		return INT;
+	if (farg && t == FLOAT)
+		return DOUBLE;
+	return t;
 }
 
 /*
@@ -2151,164 +2157,125 @@ new_tnode(op_t op, bool sys, type_t *type, tnode_t *ln, tnode_t *rn)
 tnode_t *
 promote(op_t op, bool farg, tnode_t *tn)
 {
-	tspec_t	t;
-	type_t	*ntp;
-	unsigned int len;
 
-	t = tn->tn_type->t_tspec;
-
-	if (!is_arithmetic(t))
+	tspec_t ot = tn->tn_type->t_tspec;
+	if (!is_arithmetic(ot))
 		return tn;
 
-	if (allow_c90) {
-		/*
-		 * C99 6.3.1.1p2 requires for types with lower rank than int
-		 * that "If an int can represent all the values of the
-		 * original type, the value is converted to an int; otherwise
-		 * it is converted to an unsigned int", and that "All other
-		 * types are unchanged by the integer promotions".
-		 */
-		if (tn->tn_type->t_bitfield) {
-			len = tn->tn_type->t_flen;
-			if (len < size_in_bits(INT)) {
-				t = INT;
-			} else if (len == size_in_bits(INT)) {
-				t = is_uinteger(t) ? UINT : INT;
-			}
-		} else if (t == CHAR || t == UCHAR || t == SCHAR) {
-			t = (size_in_bits(CHAR) < size_in_bits(INT)
-			     || t != UCHAR) ? INT : UINT;
-		} else if (t == SHORT || t == USHORT) {
-			t = (size_in_bits(SHORT) < size_in_bits(INT)
-			     || t == SHORT) ? INT : UINT;
-		} else if (t == ENUM) {
-			t = INT;
-		} else if (farg && t == FLOAT) {
-			t = DOUBLE;
-		}
-	} else {
-		/*
-		 * In traditional C, keep unsigned and promote FLOAT
-		 * to DOUBLE.
-		 */
-		if (t == UCHAR || t == USHORT) {
-			t = UINT;
-		} else if (t == CHAR || t == SCHAR || t == SHORT) {
-			t = INT;
-		} else if (t == FLOAT) {
-			t = DOUBLE;
-		} else if (t == ENUM) {
-			t = INT;
-		}
-	}
+	tspec_t nt = allow_c90 ? promote_c90(tn, ot, farg) : promote_trad(ot);
+	if (nt == ot)
+		return tn;
 
-	if (t != tn->tn_type->t_tspec) {
-		ntp = expr_dup_type(tn->tn_type);
-		ntp->t_tspec = t;
-		/*
-		 * Keep t_is_enum even though t_tspec gets converted from
-		 * ENUM to INT, so we are later able to check compatibility
-		 * of enum types.
-		 */
-		tn = convert(op, 0, ntp, tn);
-	}
+	type_t *ntp = expr_dup_type(tn->tn_type);
+	ntp->t_tspec = nt;
+	/*
+	 * Keep t_is_enum even though t_tspec gets converted from
+	 * ENUM to INT, so we are later able to check compatibility
+	 * of enum types.
+	 */
+	return convert(op, 0, ntp, tn);
+}
 
-	return tn;
+static tnode_t *
+apply_usual_arithmetic_conversions(op_t op, tnode_t *tn, tspec_t t)
+{
+	type_t *ntp = expr_dup_type(tn->tn_type);
+	ntp->t_tspec = t;
+	if (tn->tn_op != CON) {
+		/* usual arithmetic conversion for '%s' from '%s' to '%s' */
+		query_message(4, op_name(op),
+		    type_name(tn->tn_type), type_name(ntp));
+	}
+	return convert(op, 0, ntp, tn);
+}
+
+static const tspec_t arith_rank[] = {
+	LDOUBLE, DOUBLE, FLOAT,
+#ifdef INT128_SIZE
+	UINT128, INT128,
+#endif
+	UQUAD, QUAD,
+	ULONG, LONG,
+	UINT, INT,
+};
+
+/* Keep unsigned in traditional C */
+static tspec_t
+usual_arithmetic_conversion_trad(tspec_t lt, tspec_t rt)
+{
+
+	size_t i;
+	for (i = 0; arith_rank[i] != INT; i++)
+		if (lt == arith_rank[i] || rt == arith_rank[i])
+			break;
+
+	tspec_t t = arith_rank[i];
+	if (is_uinteger(lt) || is_uinteger(rt))
+		if (is_integer(t) && !is_uinteger(t))
+			return unsigned_type(t);
+	return t;
+}
+
+static tspec_t
+usual_arithmetic_conversion_c90(tspec_t lt, tspec_t rt)
+{
+
+	if (lt == rt)
+		return lt;
+
+	if (lt == LCOMPLEX || rt == LCOMPLEX)
+		return LCOMPLEX;
+	if (lt == DCOMPLEX || rt == DCOMPLEX)
+		return DCOMPLEX;
+	if (lt == FCOMPLEX || rt == FCOMPLEX)
+		return FCOMPLEX;
+	if (lt == LDOUBLE || rt == LDOUBLE)
+		return LDOUBLE;
+	if (lt == DOUBLE || rt == DOUBLE)
+		return DOUBLE;
+	if (lt == FLOAT || rt == FLOAT)
+		return FLOAT;
+
+	/*
+	 * If type A has more bits than type B, it should be able to hold all
+	 * possible values of type B.
+	 */
+	if (size_in_bits(lt) > size_in_bits(rt))
+		return lt;
+	if (size_in_bits(lt) < size_in_bits(rt))
+		return rt;
+
+	size_t i;
+	for (i = 3; arith_rank[i] != INT; i++)
+		if (arith_rank[i] == lt || arith_rank[i] == rt)
+			break;
+	if ((is_uinteger(lt) || is_uinteger(rt)) &&
+	    !is_uinteger(arith_rank[i]))
+		i--;
+	return arith_rank[i];
 }
 
 /*
- * Apply the "usual arithmetic conversions" (C99 6.3.1.8).
- *
- * This gives both operands the same type.
- * This is done in different ways for traditional C and C90.
+ * Apply the "usual arithmetic conversions" (C99 6.3.1.8), which gives both
+ * operands the same type.
  */
 static void
 balance(op_t op, tnode_t **lnp, tnode_t **rnp)
 {
-	tspec_t	lt, rt, t;
-	int	i;
-	bool	u;
-	type_t	*ntp;
-	static const tspec_t tl[] = {
-		LDOUBLE, DOUBLE, FLOAT,
-#ifdef INT128_SIZE
-		UINT128, INT128,
-#endif
-		UQUAD, QUAD,
-		ULONG, LONG,
-		UINT, INT,
-	};
 
-	lt = (*lnp)->tn_type->t_tspec;
-	rt = (*rnp)->tn_type->t_tspec;
-
+	tspec_t lt = (*lnp)->tn_type->t_tspec;
+	tspec_t rt = (*rnp)->tn_type->t_tspec;
 	if (!is_arithmetic(lt) || !is_arithmetic(rt))
 		return;
 
-	if (allow_c90) {
-		if (lt == rt) {
-			t = lt;
-		} else if (lt == LCOMPLEX || rt == LCOMPLEX) {
-			t = LCOMPLEX;
-		} else if (lt == DCOMPLEX || rt == DCOMPLEX) {
-			t = DCOMPLEX;
-		} else if (lt == FCOMPLEX || rt == FCOMPLEX) {
-			t = FCOMPLEX;
-		} else if (lt == LDOUBLE || rt == LDOUBLE) {
-			t = LDOUBLE;
-		} else if (lt == DOUBLE || rt == DOUBLE) {
-			t = DOUBLE;
-		} else if (lt == FLOAT || rt == FLOAT) {
-			t = FLOAT;
-		} else {
-			/*
-			 * If type A has more bits than type B it should
-			 * be able to hold all possible values of type B.
-			 */
-			if (size_in_bits(lt) > size_in_bits(rt)) {
-				t = lt;
-			} else if (size_in_bits(lt) < size_in_bits(rt)) {
-				t = rt;
-			} else {
-				for (i = 3; tl[i] != INT; i++) {
-					if (tl[i] == lt || tl[i] == rt)
-						break;
-				}
-				if ((is_uinteger(lt) || is_uinteger(rt)) &&
-				    !is_uinteger(tl[i])) {
-					i--;
-				}
-				t = tl[i];
-			}
-		}
-	} else {
-		/* Keep unsigned in traditional C */
-		u = is_uinteger(lt) || is_uinteger(rt);
-		for (i = 0; tl[i] != INT; i++) {
-			if (lt == tl[i] || rt == tl[i])
-				break;
-		}
-		t = tl[i];
-		if (u && is_integer(t) && !is_uinteger(t))
-			t = unsigned_type(t);
-	}
+	tspec_t t = allow_c90
+	    ? usual_arithmetic_conversion_c90(lt, rt)
+	    : usual_arithmetic_conversion_trad(lt, rt);
 
-	if (t != lt) {
-		ntp = expr_dup_type((*lnp)->tn_type);
-		ntp->t_tspec = t;
-		/* usual arithmetic conversion for '%s' from '%s' to '%s' */
-		query_message(4, op_name(op),
-		    type_name((*lnp)->tn_type), type_name(ntp));
-		*lnp = convert(op, 0, ntp, *lnp);
-	}
-	if (t != rt) {
-		ntp = expr_dup_type((*rnp)->tn_type);
-		ntp->t_tspec = t;
-		/* usual arithmetic conversion for '%s' from '%s' to '%s' */
-		query_message(4, op_name(op),
-		    type_name((*rnp)->tn_type), type_name(ntp));
-		*rnp = convert(op, 0, ntp, *rnp);
-	}
+	if (t != lt)
+		*lnp = apply_usual_arithmetic_conversions(op, *lnp, t);
+	if (t != rt)
+		*rnp = apply_usual_arithmetic_conversions(op, *rnp, t);
 }
 
 static void
@@ -2469,8 +2436,6 @@ check_prototype_conversion(int arg, tspec_t nt, tspec_t ot, type_t *tp,
  * When converting a large integer type to a small integer type, in some
  * cases the value of the actual expression is further restricted than the
  * type bounds, such as in (expr & 0xFF) or (expr % 100) or (expr >> 24).
- *
- * See new_tnode, the '#if 0' code for SHR.
  */
 static bool
 can_represent(const type_t *tp, const tnode_t *tn)
@@ -3293,25 +3258,18 @@ build_bit_shift(op_t op, bool sys, tnode_t *ln, tnode_t *rn)
 	return new_tnode(op, sys, ln->tn_type, ln, rn);
 }
 
-/*
- * Create a node for COLON.
- */
+/* See C99 6.5.15 "Conditional operator". */
 static tnode_t *
 build_colon(bool sys, tnode_t *ln, tnode_t *rn)
 {
-	tspec_t	lt, rt, pdt;
+	tspec_t	lt, rt;
 	type_t	*tp;
-	tnode_t	*ntn;
 
 	lt = ln->tn_type->t_tspec;
 	rt = rn->tn_type->t_tspec;
-	pdt = PTRDIFF_TSPEC;
 
-	/*
-	 * Arithmetic types are balanced, all other type combinations
-	 * still need to be handled.
-	 */
 	if (is_arithmetic(lt) && is_arithmetic(rt)) {
+		/* The operands were already balanced in build_binary. */
 		tp = ln->tn_type;
 	} else if (lt == BOOL && rt == BOOL) {
 		tp = ln->tn_type;
@@ -3328,21 +3286,21 @@ build_colon(bool sys, tnode_t *ln, tnode_t *rn)
 		}
 		tp = ln->tn_type;
 	} else if (lt == PTR && is_integer(rt)) {
-		if (rt != pdt) {
-			rn = convert(NOOP, 0, gettyp(pdt), rn);
-			rt = pdt;
-		}
+		if (rt != PTRDIFF_TSPEC)
+			rn = convert(NOOP, 0, gettyp(PTRDIFF_TSPEC), rn);
 		tp = ln->tn_type;
 	} else if (rt == PTR && is_integer(lt)) {
-		if (lt != pdt) {
-			ln = convert(NOOP, 0, gettyp(pdt), ln);
-			lt = pdt;
-		}
+		if (lt != PTRDIFF_TSPEC)
+			ln = convert(NOOP, 0, gettyp(PTRDIFF_TSPEC), ln);
 		tp = rn->tn_type;
-	} else if (lt == PTR && ln->tn_type->t_subt->t_tspec == VOID) {
-		tp = merge_qualifiers(rn->tn_type, ln->tn_type);
-	} else if (rt == PTR && rn->tn_type->t_subt->t_tspec == VOID) {
+	} else if (lt == PTR && is_null_pointer(rn)) {
 		tp = merge_qualifiers(ln->tn_type, rn->tn_type);
+	} else if (rt == PTR && is_null_pointer(ln)) {
+		tp = merge_qualifiers(rn->tn_type, ln->tn_type);
+	} else if (lt == PTR && ln->tn_type->t_subt->t_tspec == VOID) {
+		tp = merge_qualifiers(ln->tn_type, rn->tn_type);
+	} else if (rt == PTR && rn->tn_type->t_subt->t_tspec == VOID) {
+		tp = merge_qualifiers(rn->tn_type, ln->tn_type);
 	} else {
 		/*
 		 * XXX For now we simply take the left type. This is
@@ -3353,9 +3311,7 @@ build_colon(bool sys, tnode_t *ln, tnode_t *rn)
 		tp = merge_qualifiers(ln->tn_type, rn->tn_type);
 	}
 
-	ntn = new_tnode(COLON, sys, tp, ln, rn);
-
-	return ntn;
+	return new_tnode(COLON, sys, tp, ln, rn);
 }
 
 /* TODO: check for varargs */
@@ -3622,6 +3578,7 @@ fold(tnode_t *tn)
 		break;
 	case SHL:
 		/* TODO: warn about out-of-bounds 'sr'. */
+		/* TODO: warn about overflow in signed '<<'. */
 		q = utyp ? (int64_t)(ul << (sr & 63)) : sl << (sr & 63);
 		break;
 	case SHR:
@@ -3834,7 +3791,7 @@ build_sizeof(const type_t *tp)
 /*
  * Create a constant node for offsetof.
  */
-/* ARGSUSED */ /* See implementation comments. */
+/* ARGSUSED */ /* FIXME: See implementation comments. */
 tnode_t *
 build_offsetof(const type_t *tp, const sym_t *sym)
 {
@@ -3845,7 +3802,7 @@ build_offsetof(const type_t *tp, const sym_t *sym)
 		/* unacceptable operand of '%s' */
 		error(111, "offsetof");
 
-	/* XXX: wrong size, no checking for sym fixme */
+	/* FIXME: Don't wrongly use the size of the whole type, use sym. */
 	offset_in_bytes = type_size_in_bits(tp) / CHAR_SIZE;
 	tn = build_integer_constant(SIZEOF_TSPEC, offset_in_bytes);
 	tn->tn_system_dependent = true;
@@ -3954,6 +3911,34 @@ build_alignof(const type_t *tp)
 	    (int64_t)alignment_in_bits(tp) / CHAR_SIZE);
 }
 
+static tnode_t *
+cast_to_union(const tnode_t *otn, type_t *ntp)
+{
+
+	if (!allow_gcc) {
+		/* union cast is a GCC extension */
+		error(328);
+		return NULL;
+	}
+
+	for (const sym_t *m = ntp->t_str->sou_first_member;
+	    m != NULL; m = m->s_next) {
+		if (types_compatible(m->s_type, otn->tn_type,
+		    false, false, NULL)) {
+			tnode_t *ntn = expr_alloc_tnode();
+			ntn->tn_op = CVT;
+			ntn->tn_type = ntp;
+			ntn->tn_cast = true;
+			ntn->tn_right = NULL;
+			return ntn;
+		}
+	}
+
+	/* type '%s' is not a member of '%s' */
+	error(329, type_name(otn->tn_type), type_name(ntp));
+	return NULL;
+}
+
 /*
  * Type casts.
  */
@@ -3978,27 +3963,7 @@ cast(tnode_t *tn, type_t *tp)
 		 * scalar type to a scalar type.
 		 */
 	} else if (nt == UNION) {
-		sym_t *m;
-		struct_or_union *str = tp->t_str;
-		if (!allow_gcc) {
-			/* union cast is a GCC extension */
-			error(328);
-			return NULL;
-		}
-		for (m = str->sou_first_member; m != NULL; m = m->s_next) {
-			if (types_compatible(m->s_type, tn->tn_type,
-			    false, false, NULL)) {
-				tn = expr_alloc_tnode();
-				tn->tn_op = CVT;
-				tn->tn_type = tp;
-				tn->tn_cast = true;
-				tn->tn_right = NULL;
-				return tn;
-			}
-		}
-		/* type '%s' is not a member of '%s' */
-		error(329, type_name(tn->tn_type), type_name(tp));
-		return NULL;
+		return cast_to_union(tn, tp);
 	} else if (nt == STRUCT || nt == ARRAY || nt == FUNC) {
 		/* Casting to a struct is an undocumented GCC extension. */
 		if (!(allow_gcc && nt == STRUCT))
@@ -4890,7 +4855,7 @@ check_precedence_confusion(tnode_t *tn)
 }
 
 typedef struct stmt_expr {
-	struct memory_block *se_mem;
+	memory_pool se_mem;
 	sym_t *se_sym;
 	struct stmt_expr *se_enclosing;
 } stmt_expr;

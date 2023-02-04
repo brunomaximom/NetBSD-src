@@ -1,4 +1,4 @@
-/* $NetBSD: secmodel_suser.c,v 1.55 2020/09/08 14:12:57 christos Exp $ */
+/* $NetBSD: secmodel_suser.c,v 1.57 2023/01/05 18:29:45 jakllsch Exp $ */
 /*-
  * Copyright (c) 2006 Elad Efrat <elad@NetBSD.org>
  * All rights reserved.
@@ -38,7 +38,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: secmodel_suser.c,v 1.55 2020/09/08 14:12:57 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: secmodel_suser.c,v 1.57 2023/01/05 18:29:45 jakllsch Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -700,19 +700,6 @@ secmodel_suser_network_cb(kauth_cred_t cred, kauth_action_t action,
 
 		break;
 
-	case KAUTH_NETWORK_INTERFACE_STRIP:
-		switch (req) {
-		case KAUTH_REQ_NETWORK_INTERFACE_STRIP_ADD:
-			if (isroot)
-				result = KAUTH_RESULT_ALLOW;
-			break;
-
-		default:
-			break;
-		}
-
-		break;
-
 	case KAUTH_NETWORK_INTERFACE_TUN:
 		switch (req) {
 		case KAUTH_REQ_NETWORK_INTERFACE_TUN_ADD:
@@ -764,6 +751,20 @@ secmodel_suser_network_cb(kauth_cred_t cred, kauth_action_t action,
 			if (isroot)
 				result = KAUTH_RESULT_ALLOW;
 
+			break;
+
+		default:
+			break;
+		}
+
+		break;
+
+	case KAUTH_NETWORK_INTERFACE_WG:
+		switch (req) {
+		case KAUTH_REQ_NETWORK_INTERFACE_WG_GETPRIV:
+		case KAUTH_REQ_NETWORK_INTERFACE_WG_SETPRIV:
+			if (isroot)
+				result = KAUTH_RESULT_ALLOW;
 			break;
 
 		default:

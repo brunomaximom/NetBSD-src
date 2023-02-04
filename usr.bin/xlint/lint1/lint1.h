@@ -1,4 +1,4 @@
-/* $NetBSD: lint1.h,v 1.158 2022/10/01 09:42:40 rillig Exp $ */
+/* $NetBSD: lint1.h,v 1.161 2023/01/21 13:07:22 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -35,6 +35,18 @@
 #include "lint.h"
 #include "err-msgs.h"
 #include "op.h"
+
+/*
+ * A memory pool collects allocated objects that must be available until:
+ * - the end of a block,
+ * - the end of an expression, or
+ * - the end of the translation unit.
+ */
+typedef struct memory_pool {
+	void	**items;
+	size_t	len;
+	size_t	cap;
+} memory_pool;
 
 /* See saved_lwarn in cgram.y. */
 #define LWARN_ALL	(-2)
@@ -80,7 +92,11 @@ typedef	struct strg {
  * qualifiers (only for lex/yacc interface)
  */
 typedef enum {
-	CONST, VOLATILE, RESTRICT, THREAD
+	CONST,
+	VOLATILE,
+	RESTRICT,
+	THREAD,			/* XXX: storage-class-qualifier */
+	ATOMIC,
 } tqual_t;
 
 /* An integer or floating-point value. */
@@ -202,8 +218,8 @@ typedef enum {
 	STRUCT_TAG,
 	UNION_TAG,
 	ENUM_TAG,
-	MOS,		/* member of struct */
-	MOU,		/* member of union */
+	STRUCT_MEMBER,
+	UNION_MEMBER,
 	BOOL_CONST,
 	ENUM_CONST,
 	ABSTRACT,	/* abstract symbol (sizeof, casts, unnamed argument) */
@@ -323,9 +339,9 @@ struct array_size {
 
 typedef enum declaration_kind {
 	DK_EXTERN,		/* global variable or function */
-	DK_MOS,			/* struct member */
-	DK_MOU,			/* union member */
-	DK_ENUM_CONST,		/* enum constant */
+	DK_STRUCT_MEMBER,
+	DK_UNION_MEMBER,
+	DK_ENUM_CONSTANT,
 	DK_OLD_STYLE_ARG,	/* argument in an old-style function
 				 * definition */
 	DK_PROTO_ARG,		/* argument in a prototype function
@@ -426,7 +442,7 @@ typedef struct control_statement {
 	tnode_t	*c_switch_expr;
 	case_label_t *c_case_labels;	/* list of case values */
 
-	struct	memory_block *c_for_expr3_mem; /* saved memory for end of loop
+	memory_pool c_for_expr3_mem;	/* saved memory for end of loop
 					 * expression in for() */
 	tnode_t	*c_for_expr3;		/* end of loop expr in for() */
 	pos_t	c_for_expr3_pos;	/* position of end of loop expr */
@@ -584,5 +600,5 @@ is_struct_or_union(tspec_t t)
 static inline bool
 is_member(const sym_t *sym)
 {
-	return sym->s_scl == MOS || sym->s_scl == MOU;
+	return sym->s_scl == STRUCT_MEMBER || sym->s_scl == UNION_MEMBER;
 }

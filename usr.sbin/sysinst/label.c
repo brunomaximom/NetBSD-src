@@ -1,4 +1,4 @@
-/*	$NetBSD: label.c,v 1.46 2022/12/15 20:21:16 martin Exp $	*/
+/*	$NetBSD: label.c,v 1.48 2023/01/06 18:19:27 martin Exp $	*/
 
 /*
  * Copyright 1997 Jonathan Stone
@@ -36,7 +36,7 @@
 
 #include <sys/cdefs.h>
 #if defined(LIBC_SCCS) && !defined(lint)
-__RCSID("$NetBSD: label.c,v 1.46 2022/12/15 20:21:16 martin Exp $");
+__RCSID("$NetBSD: label.c,v 1.48 2023/01/06 18:19:27 martin Exp $");
 #endif
 
 #include <sys/types.h>
@@ -74,9 +74,7 @@ boringpart(const struct disk_part_info *info)
 
 	if (info->size == 0)
 		return true;
-	if (info->flags &
-	     (PTI_PSCHEME_INTERNAL|PTI_WHOLE_DISK|PTI_SEC_CONTAINER|
-	     PTI_RAW_PART))
+	if (info->flags & PTI_SPECIAL_PARTS)
 		return true;
 
 	return false;
@@ -512,6 +510,9 @@ renumber_partitions(struct partition_usage_set *pset)
 			if (pset->infos[i].cur_start != info.start)
 				continue;
 			if (pset->infos[i].cur_flags != info.flags)
+				continue;
+			if ((info.flags & PTI_SPECIAL_PARTS) !=
+			    (pset->infos[i].flags & PTI_SPECIAL_PARTS))
 				continue;
 			if ((info.fs_type != FS_UNUSED &&
 			    info.fs_type == pset->infos[i].fs_type) ||
@@ -1517,7 +1518,8 @@ fmt_fspart_row(menudesc *m, int ptn, void *arg)
 	*fp = 0;
 	if (pset->parts->pscheme->get_part_attr_str != NULL)
 		pset->parts->pscheme->get_part_attr_str(pset->parts,
-		    pset->infos[ptn].cur_part_id, fp, sizeof(flag_str)-1);
+		    pset->infos[ptn].cur_part_id, fp,
+		    sizeof(flag_str)-1-(fp-flag_str));
 
 	/* if the fstype description does not fit, check if we can overrun */
 	if (strlen(desc) > (size_t)fstype_width &&

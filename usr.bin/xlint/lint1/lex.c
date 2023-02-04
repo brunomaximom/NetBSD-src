@@ -1,4 +1,4 @@
-/* $NetBSD: lex.c,v 1.134 2022/10/01 10:04:06 rillig Exp $ */
+/* $NetBSD: lex.c,v 1.147 2023/01/29 13:57:35 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -38,7 +38,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID)
-__RCSID("$NetBSD: lex.c,v 1.134 2022/10/01 10:04:06 rillig Exp $");
+__RCSID("$NetBSD: lex.c,v 1.147 2023/01/29 13:57:35 rillig Exp $");
 #endif
 
 #include <ctype.h>
@@ -70,7 +70,7 @@ bool in_system_header;
 /*
  * Valid values for 'since' are 78, 90, 99, 11.
  *
- * As of 2022-04-30, lint treats 11 like 99, in order to provide good error
+ * The C11 keywords are added in C99 mode as well, to provide good error
  * messages instead of a simple parse error.  If the keyword '_Generic' were
  * not defined, it would be interpreted as an implicit function call, leading
  * to a parse error.
@@ -96,15 +96,15 @@ bool in_system_header;
 
 /* During initialization, these keywords are written to the symbol table. */
 static const struct keyword {
-	const	char *kw_name;	/* keyword */
+	const	char *kw_name;
 	int	kw_token;	/* token returned by yylex() */
-	scl_t	kw_scl;		/* storage class if kw_token T_SCLASS */
-	tspec_t	kw_tspec;	/* type spec. if kw_token
-				 * T_TYPE or T_STRUCT_OR_UNION */
-	tqual_t	kw_tqual;	/* type qual. if kw_token T_QUAL */
-	bool	kw_c90:1;	/* C90 keyword */
-	bool	kw_c99_or_c11:1; /* C99 or C11 keyword */
-	bool	kw_gcc:1;	/* GCC keyword */
+	scl_t	kw_scl;		/* storage class if kw_token is T_SCLASS */
+	tspec_t	kw_tspec;	/* type specifier if kw_token is T_TYPE or
+				 * T_STRUCT_OR_UNION */
+	tqual_t	kw_tqual;	/* type qualifier if kw_token is T_QUAL */
+	bool	kw_c90:1;	/* available in C90 mode */
+	bool	kw_c99_or_c11:1; /* available in C99 or C11 mode */
+	bool	kw_gcc:1;	/* available in GCC mode */
 	bool	kw_plain:1;	/* 'name' */
 	bool	kw_leading:1;	/* '__name' */
 	bool	kw_both:1;	/* '__name__' */
@@ -113,6 +113,7 @@ static const struct keyword {
 	kwdef_keyword(	"_Alignof",	T_ALIGNOF),
 	kwdef_token(	"alignof",	T_ALIGNOF,		78,0,6),
 	kwdef_token(	"asm",		T_ASM,			78,1,7),
+	kwdef_token(	"_Atomic",	T_ATOMIC,		11,0,1),
 	kwdef_token(	"attribute",	T_ATTRIBUTE,		78,1,6),
 	kwdef_sclass(	"auto",		AUTO,			78,0,1),
 	kwdef_type(	"_Bool",	BOOL,			99),
@@ -157,6 +158,7 @@ static const struct keyword {
 	kwdef_keyword(	"switch",	T_SWITCH),
 	kwdef_token(	"__symbolrename",	T_SYMBOLRENAME,	78,0,1),
 	kwdef_tqual(	"__thread",	THREAD,			78,1,1),
+	/* XXX: _Thread_local is a storage-class-specifier, not tqual. */
 	kwdef_tqual(	"_Thread_local", THREAD,		11,0,1),
 	kwdef_sclass(	"typedef",	TYPEDEF,		78,0,1),
 	kwdef_token(	"typeof",	T_TYPEOF,		78,1,7),
@@ -176,14 +178,17 @@ static const struct keyword {
 #undef kwdef_keyword
 };
 
-/* Symbol table */
-static	sym_t	*symtab[HSHSIZ1];
+/*
+ * The symbol table containing all keywords, identifiers and labels. The hash
+ * entries are linked via sym_t.s_symtab_next.
+ */
+static sym_t *symtab[HSHSIZ1];
 
-/* type of next expected symbol */
-symt_t	symtyp;
-
-
-static	int	get_escaped_char(int);
+/*
+ * The kind of the next expected symbol, to distinguish the namespaces of
+ * members, labels, type tags and other identifiers.
+ */
+symt_t symtyp;
 
 
 static unsigned int
@@ -213,12 +218,12 @@ symtab_add(sym_t *sym)
 }
 
 static sym_t *
-symtab_search(sbuf_t *sb)
+symtab_search(const char *name)
 {
 
-	unsigned int h = hash(sb->sb_name);
+	unsigned int h = hash(name);
 	for (sym_t *sym = symtab[h]; sym != NULL; sym = sym->s_symtab_next) {
-		if (strcmp(sym->s_name, sb->sb_name) != 0)
+		if (strcmp(sym->s_name, name) != 0)
 			continue;
 
 		const struct keyword *kw = sym->s_keyword;
@@ -273,7 +278,7 @@ struct syms {
 static void
 syms_add(struct syms *syms, const sym_t *sym)
 {
-	while (syms->len >= syms->cap) {
+	if (syms->len >= syms->cap) {
 		syms->cap *= 2;
 		syms->items = xrealloc(syms->items,
 		    syms->cap * sizeof(syms->items[0]));
@@ -325,29 +330,28 @@ debug_symtab(void)
 static void
 add_keyword(const struct keyword *kw, bool leading, bool trailing)
 {
-	sym_t *sym;
-	char buf[256];
-	const char *name;
 
+	const char *name;
 	if (!leading && !trailing) {
 		name = kw->kw_name;
 	} else {
+		char buf[256];
 		(void)snprintf(buf, sizeof(buf), "%s%s%s",
 		    leading ? "__" : "", kw->kw_name, trailing ? "__" : "");
 		name = xstrdup(buf);
 	}
 
-	sym = block_zero_alloc(sizeof(*sym));
+	sym_t *sym = block_zero_alloc(sizeof(*sym));
 	sym->s_name = name;
 	sym->s_keyword = kw;
-	sym->u.s_keyword.sk_token = kw->kw_token;
-	if (kw->kw_token == T_TYPE || kw->kw_token == T_STRUCT_OR_UNION) {
+	int tok = kw->kw_token;
+	sym->u.s_keyword.sk_token = tok;
+	if (tok == T_TYPE || tok == T_STRUCT_OR_UNION)
 		sym->u.s_keyword.sk_tspec = kw->kw_tspec;
-	} else if (kw->kw_token == T_SCLASS) {
+	if (tok == T_SCLASS)
 		sym->s_scl = kw->kw_scl;
-	} else if (kw->kw_token == T_QUAL) {
+	if (tok == T_QUAL)
 		sym->u.s_keyword.sk_qualifier = kw->kw_tqual;
-	}
 
 	symtab_add(sym);
 }
@@ -375,17 +379,14 @@ is_keyword_known(const struct keyword *kw)
 	return true;
 }
 
-/*
- * All keywords are written to the symbol table. This saves us looking
- * in an extra table for each name we found.
- */
+/* Write all keywords to the symbol table. */
 void
 initscan(void)
 {
-	const struct keyword *kw, *end;
 
-	end = keywords + sizeof(keywords) / sizeof(keywords[0]);
-	for (kw = keywords; kw != end; kw++) {
+	size_t n = sizeof(keywords) / sizeof(keywords[0]);
+	for (size_t i = 0; i < n; i++) {
+		const struct keyword *kw = keywords + i;
 		if (!is_keyword_known(kw))
 			continue;
 		if (kw->kw_plain)
@@ -398,11 +399,13 @@ initscan(void)
 }
 
 /*
- * Read a character and ensure that it is positive (except EOF).
- * Increment line count(s) if necessary.
+ * When scanning the remainder of a long token (see lex_input), read a byte
+ * and return it as an unsigned char or as EOF.
+ *
+ * Increment the line counts if necessary.
  */
 static int
-inpc(void)
+read_byte(void)
 {
 	int	c;
 
@@ -419,68 +422,47 @@ inpc(void)
 static int
 lex_keyword(sym_t *sym)
 {
-	int	t;
+	int tok = sym->u.s_keyword.sk_token;
 
-	if ((t = sym->u.s_keyword.sk_token) == T_SCLASS) {
+	if (tok == T_SCLASS)
 		yylval.y_scl = sym->s_scl;
-	} else if (t == T_TYPE || t == T_STRUCT_OR_UNION) {
+	if (tok == T_TYPE || tok == T_STRUCT_OR_UNION)
 		yylval.y_tspec = sym->u.s_keyword.sk_tspec;
-	} else if (t == T_QUAL) {
+	if (tok == T_QUAL)
 		yylval.y_tqual = sym->u.s_keyword.sk_qualifier;
-	}
-	return t;
-}
-
-/*
- * Lex has found a letter followed by zero or more letters or digits.
- * It looks for a symbol in the symbol table with the same name. This
- * symbol must either be a keyword or a symbol of the type required by
- * symtyp (label, member, tag, ...).
- *
- * If it is a keyword, the token is returned. In some cases it is described
- * more deeply by data written to yylval.
- *
- * If it is a symbol, T_NAME is returned and the name is stored in yylval.
- * If there is already a symbol of the same name and type in the symbol
- * table, yylval.y_name->sb_sym points there.
- */
-extern int
-lex_name(const char *yytext, size_t yyleng)
-{
-	char	*s;
-	sbuf_t	*sb;
-	sym_t	*sym;
-	int	tok;
-
-	sb = xmalloc(sizeof(*sb));
-	sb->sb_name = yytext;
-	sb->sb_len = yyleng;
-	if ((sym = symtab_search(sb)) != NULL && sym->s_keyword != NULL) {
-		free(sb);
-		return lex_keyword(sym);
-	}
-
-	sb->sb_sym = sym;
-
-	if (sym != NULL) {
-		lint_assert(block_level >= sym->s_block_level);
-		sb->sb_name = sym->s_name;
-		tok = sym->s_scl == TYPEDEF ? T_TYPENAME : T_NAME;
-	} else {
-		s = block_zero_alloc(yyleng + 1);
-		(void)memcpy(s, yytext, yyleng + 1);
-		sb->sb_name = s;
-		tok = T_NAME;
-	}
-
-	yylval.y_name = sb;
 	return tok;
 }
 
 /*
- * Convert a string representing an integer into internal representation.
- * Return T_CON, storing the numeric value in yylval, for yylex.
+ * Look up the definition of a name in the symbol table. This symbol must
+ * either be a keyword or a symbol of the type required by symtyp (label,
+ * member, tag, ...).
  */
+extern int
+lex_name(const char *yytext, size_t yyleng)
+{
+
+	sym_t *sym = symtab_search(yytext);
+	if (sym != NULL && sym->s_keyword != NULL)
+		return lex_keyword(sym);
+
+	sbuf_t *sb = xmalloc(sizeof(*sb));
+	sb->sb_len = yyleng;
+	sb->sb_sym = sym;
+	yylval.y_name = sb;
+
+	if (sym != NULL) {
+		lint_assert(block_level >= sym->s_block_level);
+		sb->sb_name = sym->s_name;
+		return sym->s_scl == TYPEDEF ? T_TYPENAME : T_NAME;
+	}
+
+	char *name = block_zero_alloc(yyleng + 1);
+	(void)memcpy(name, yytext, yyleng + 1);
+	sb->sb_name = name;
+	return T_NAME;
+}
+
 int
 lex_integer_constant(const char *yytext, size_t yyleng, int base)
 {
@@ -510,15 +492,13 @@ lex_integer_constant(const char *yytext, size_t yyleng, int base)
 
 	/* read suffixes */
 	l_suffix = u_suffix = 0;
-	for (;;) {
-		if ((c = cp[len - 1]) == 'l' || c == 'L') {
+	for (;; len--) {
+		if ((c = cp[len - 1]) == 'l' || c == 'L')
 			l_suffix++;
-		} else if (c == 'u' || c == 'U') {
+		else if (c == 'u' || c == 'U')
 			u_suffix++;
-		} else {
+		else
 			break;
-		}
-		len--;
 	}
 	if (l_suffix > 2 || u_suffix > 1) {
 		/* malformed integer constant */
@@ -535,7 +515,6 @@ lex_integer_constant(const char *yytext, size_t yyleng, int base)
 	typ = suffix_type[u_suffix][l_suffix];
 
 	errno = 0;
-
 	uq = (uint64_t)strtoull(cp, &eptr, base);
 	lint_assert(eptr == cp + len);
 	if (errno != 0) {
@@ -652,13 +631,6 @@ convert_integer(int64_t q, tspec_t t, unsigned int len)
 	    : (int64_t)(q | ~vbits);
 }
 
-/*
- * Convert a string representing a floating point value into its numerical
- * representation. Type and value are returned in yylval.
- *
- * XXX Currently it is not possible to convert constants of type
- * long double which are greater than DBL_MAX.
- */
 int
 lex_floating_constant(const char *yytext, size_t yyleng)
 {
@@ -667,7 +639,6 @@ lex_floating_constant(const char *yytext, size_t yyleng)
 	tspec_t typ;
 	char	c, *eptr;
 	double	d;
-	float	f = 0;
 
 	cp = yytext;
 	len = yyleng;
@@ -692,14 +663,15 @@ lex_floating_constant(const char *yytext, size_t yyleng)
 		warning(98);
 	}
 
+	/* TODO: Handle precision and exponents of 'long double'. */
 	errno = 0;
 	d = strtod(cp, &eptr);
 	if (eptr != cp + len) {
 		switch (*eptr) {
 			/*
-			 * XXX: non-native non-current strtod() may not handle hex
-			 * floats, ignore the rest if we find traces of hex float
-			 * syntax...
+			 * XXX: Non-native non-current strtod() may not
+			 * handle hex floats, ignore the rest if we find
+			 * traces of hex float syntax.
 			 */
 		case 'p':
 		case 'P':
@@ -718,20 +690,17 @@ lex_floating_constant(const char *yytext, size_t yyleng)
 		warning(248);
 
 	if (typ == FLOAT) {
-		f = (float)d;
-		if (isfinite(f) == 0) {
+		d = (float)d;
+		if (isfinite(d) == 0) {
 			/* floating-point constant out of range */
 			warning(248);
-			f = f > 0 ? FLT_MAX : -FLT_MAX;
+			d = d > 0 ? FLT_MAX : -FLT_MAX;
 		}
 	}
 
 	yylval.y_val = xcalloc(1, sizeof(*yylval.y_val));
 	yylval.y_val->v_tspec = typ;
-	if (typ == FLOAT)
-		yylval.y_val->v_ldbl = f;
-	else
-		yylval.y_val->v_ldbl = d;
+	yylval.y_val->v_ldbl = d;
 
 	return T_CON;
 }
@@ -744,6 +713,165 @@ lex_operator(int t, op_t o)
 	return t;
 }
 
+static int prev_byte = -1;
+
+static int
+read_escaped_oct(int c)
+{
+	int n = 3;
+	int value = 0;
+	do {
+		value = (value << 3) + (c - '0');
+		c = read_byte();
+	} while (--n > 0 && '0' <= c && c <= '7');
+	prev_byte = c;
+	if (value > TARG_UCHAR_MAX) {
+		/* character escape does not fit in character */
+		warning(76);
+		value &= CHAR_MASK;
+	}
+	return value;
+}
+
+static unsigned int
+read_escaped_hex(int c)
+{
+	if (!allow_c90)
+		/* \x undefined in traditional C */
+		warning(82);
+	unsigned int value = 0;
+	int state = 0;		/* 0 = no digits, 1 = OK, 2 = overflow */
+	while (c = read_byte(), isxdigit(c)) {
+		c = isdigit(c) ? c - '0' : toupper(c) - 'A' + 10;
+		value = (value << 4) + c;
+		if (state == 2)
+			continue;
+		if ((value & ~CHAR_MASK) != 0) {
+			/* overflow in hex escape */
+			warning(75);
+			state = 2;
+		} else {
+			state = 1;
+		}
+	}
+	prev_byte = c;
+	if (state == 0) {
+		/* no hex digits follow \x */
+		error(74);
+	}
+	if (state == 2)
+		value &= CHAR_MASK;
+	return value;
+}
+
+static int
+read_escaped_backslash(int delim)
+{
+	int c;
+
+	switch (c = read_byte()) {
+	case '"':
+		if (!allow_c90 && delim == '\'')
+			/* \" inside character constants undef... */
+			warning(262);
+		return '"';
+	case '\'':
+		return '\'';
+	case '?':
+		if (!allow_c90)
+			/* \? undefined in traditional C */
+			warning(263);
+		return '?';
+	case '\\':
+		return '\\';
+	case 'a':
+		if (!allow_c90)
+			/* \a undefined in traditional C */
+			warning(81);
+		return '\a';
+	case 'b':
+		return '\b';
+	case 'f':
+		return '\f';
+	case 'n':
+		return '\n';
+	case 'r':
+		return '\r';
+	case 't':
+		return '\t';
+	case 'v':
+		if (!allow_c90)
+			/* \v undefined in traditional C */
+			warning(264);
+		return '\v';
+	case '8': case '9':
+		/* bad octal digit %c */
+		warning(77, c);
+		/* FALLTHROUGH */
+	case '0': case '1': case '2': case '3':
+	case '4': case '5': case '6': case '7':
+		return read_escaped_oct(c);
+	case 'x':
+		return (int)read_escaped_hex(c);
+	case '\n':
+		return -3;
+	case EOF:
+		return -2;
+	default:
+		if (isprint(c)) {
+			/* dubious escape \%c */
+			warning(79, c);
+		} else {
+			/* dubious escape \%o */
+			warning(80, c);
+		}
+		return c;
+	}
+}
+
+/*
+ * Read a character which is part of a character constant or of a string
+ * and handle escapes.
+ *
+ * 'delim' is '\'' for character constants and '"' for string literals.
+ *
+ * Returns -1 if the end of the character constant or string is reached,
+ * -2 if the EOF is reached, and the character otherwise.
+ */
+static int
+get_escaped_char(int delim)
+{
+
+	int c = prev_byte;
+	if (c != -1)
+		prev_byte = -1;
+	else
+		c = read_byte();
+
+	if (c == delim)
+		return -1;
+	switch (c) {
+	case '\n':
+		if (!allow_c90) {
+			/* newline in string or char constant */
+			error(254);
+			return -2;
+		}
+		return c;
+	case '\0':
+		/* syntax error '%s' */
+		error(249, "EOF or null byte in literal");
+		return -2;
+	case EOF:
+		return -2;
+	case '\\':
+		c = read_escaped_backslash(delim);
+		if (c == -3)
+			return get_escaped_char(delim);
+	}
+	return c;
+}
+
 /* Called if lex found a leading "'". */
 int
 lex_character_constant(void)
@@ -754,15 +882,17 @@ lex_character_constant(void)
 	n = 0;
 	val = 0;
 	while ((c = get_escaped_char('\'')) >= 0) {
-		val = (val << CHAR_SIZE) + c;
+		val = (int)((unsigned int)val << CHAR_SIZE) + c;
 		n++;
 	}
 	if (c == -2) {
 		/* unterminated character constant */
 		error(253);
 	} else if (n > sizeof(int) || (n > 1 && (pflag || hflag))) {
-		/* XXX: should rather be sizeof(TARG_INT) */
-
+		/*
+		 * XXX: ^^ should rather be sizeof(TARG_INT). Luckily,
+		 * sizeof(int) is the same on all supported platforms.
+		 */
 		/* too many characters in character constant */
 		error(71);
 	} else if (n > 1) {
@@ -827,144 +957,6 @@ lex_wide_character_constant(void)
 	yylval.y_val->v_quad = wc;
 
 	return T_CON;
-}
-
-/*
- * Read a character which is part of a character constant or of a string
- * and handle escapes.
- *
- * The argument is the character which delimits the character constant or
- * string.
- *
- * Returns -1 if the end of the character constant or string is reached,
- * -2 if the EOF is reached, and the character otherwise.
- */
-static int
-get_escaped_char(int delim)
-{
-	static	int pbc = -1;
-	int	n, c, v;
-
-	if (pbc == -1) {
-		c = inpc();
-	} else {
-		c = pbc;
-		pbc = -1;
-	}
-	if (c == delim)
-		return -1;
-	switch (c) {
-	case '\n':
-		if (!allow_c90) {
-			/* newline in string or char constant */
-			error(254);
-			return -2;
-		}
-		return c;
-	case '\0':
-		/* syntax error '%s' */
-		error(249, "EOF or null byte in literal");
-		return -2;
-	case EOF:
-		return -2;
-	case '\\':
-		switch (c = inpc()) {
-		case '"':
-			if (!allow_c90 && delim == '\'')
-				/* \" inside character constants undef... */
-				warning(262);
-			return '"';
-		case '\'':
-			return '\'';
-		case '?':
-			if (!allow_c90)
-				/* \? undefined in traditional C */
-				warning(263);
-			return '?';
-		case '\\':
-			return '\\';
-		case 'a':
-			if (!allow_c90)
-				/* \a undefined in traditional C */
-				warning(81);
-			return '\a';
-		case 'b':
-			return '\b';
-		case 'f':
-			return '\f';
-		case 'n':
-			return '\n';
-		case 'r':
-			return '\r';
-		case 't':
-			return '\t';
-		case 'v':
-			if (!allow_c90)
-				/* \v undefined in traditional C */
-				warning(264);
-			return '\v';
-		case '8': case '9':
-			/* bad octal digit %c */
-			warning(77, c);
-			/* FALLTHROUGH */
-		case '0': case '1': case '2': case '3':
-		case '4': case '5': case '6': case '7':
-			n = 3;
-			v = 0;
-			do {
-				v = (v << 3) + (c - '0');
-				c = inpc();
-			} while (--n > 0 && '0' <= c && c <= '7');
-			pbc = c;
-			if (v > TARG_UCHAR_MAX) {
-				/* character escape does not fit in character */
-				warning(76);
-				v &= CHAR_MASK;
-			}
-			return v;
-		case 'x':
-			if (!allow_c90)
-				/* \x undefined in traditional C */
-				warning(82);
-			v = 0;
-			n = 0;
-			while (c = inpc(), isxdigit(c)) {
-				c = isdigit(c) ?
-				    c - '0' : toupper(c) - 'A' + 10;
-				v = (v << 4) + c;
-				if (n >= 0) {
-					if ((v & ~CHAR_MASK) != 0) {
-						/* overflow in hex escape */
-						warning(75);
-						n = -1;
-					} else {
-						n++;
-					}
-				}
-			}
-			pbc = c;
-			if (n == 0) {
-				/* no hex digits follow \x */
-				error(74);
-			} if (n == -1) {
-				v &= CHAR_MASK;
-			}
-			return v;
-		case '\n':
-			return get_escaped_char(delim);
-		case EOF:
-			return -2;
-		default:
-			if (isprint(c)) {
-				/* dubious escape \%c */
-				warning(79, c);
-			} else {
-				/* dubious escape \%o */
-				warning(80, c);
-			}
-		}
-	}
-	return c;
 }
 
 /* See https://gcc.gnu.org/onlinedocs/cpp/Preprocessor-Output.html */
@@ -1048,7 +1040,7 @@ lex_directive(const char *yytext)
 		/* empty string means stdin */
 		if (fnl == 0) {
 			fn = "{standard input}";
-			fnl = 16;			/* strlen (fn) */
+			fnl = 16;	/* strlen (fn) */
 		}
 		curr_pos.p_file = record_filename(fn, fnl);
 		/*
@@ -1084,7 +1076,7 @@ lex_directive(const char *yytext)
 void
 lex_comment(void)
 {
-	int	c, lc;
+	int c;
 	static const struct {
 		const	char *keywd;
 		bool	arg;
@@ -1113,12 +1105,11 @@ lex_comment(void)
 	char	arg[32];
 	size_t	l, i;
 	int	a;
-	bool	eoc;
 
-	eoc = false;
+	bool seen_end_of_comment = false;
 
 	/* Skip whitespace after the start of the comment */
-	while (c = inpc(), isspace(c))
+	while (c = read_byte(), isspace(c))
 		continue;
 
 	/* Read the potential keyword to keywd */
@@ -1128,7 +1119,7 @@ lex_comment(void)
 		if (islower(c) && l > 0 && ch_isupper(keywd[0]))
 			break;
 		keywd[l++] = (char)c;
-		c = inpc();
+		c = read_byte();
 	}
 	while (l > 0 && ch_isspace(keywd[l - 1]))
 		l--;
@@ -1144,14 +1135,14 @@ lex_comment(void)
 
 	/* skip whitespace after the keyword */
 	while (isspace(c))
-		c = inpc();
+		c = read_byte();
 
 	/* read the argument, if the keyword accepts one and there is one */
 	l = 0;
 	if (keywtab[i].arg) {
 		while (isdigit(c) && l < sizeof(arg) - 1) {
 			arg[l++] = (char)c;
-			c = inpc();
+			c = read_byte();
 		}
 	}
 	arg[l] = '\0';
@@ -1159,39 +1150,29 @@ lex_comment(void)
 
 	/* skip whitespace after the argument */
 	while (isspace(c))
-		c = inpc();
+		c = read_byte();
 
-	if (c != '*' || (c = inpc()) != '/') {
-		if (keywtab[i].func != linted)
-			/* extra characters in lint comment */
-			warning(257);
-	} else {
-		/*
-		 * remember that we have already found the end of the
-		 * comment
-		 */
-		eoc = true;
-	}
+	seen_end_of_comment = c == '*' && (c = read_byte()) == '/';
+	if (!seen_end_of_comment && keywtab[i].func != linted)
+		/* extra characters in lint comment */
+		warning(257);
 
 	if (keywtab[i].func != NULL)
-		(*keywtab[i].func)(a);
+		keywtab[i].func(a);
 
 skip_rest:
-	while (!eoc) {
-		lc = c;
-		if ((c = inpc()) == EOF) {
+	while (!seen_end_of_comment) {
+		int lc = c;
+		if ((c = read_byte()) == EOF) {
 			/* unterminated comment */
 			error(256);
 			break;
 		}
 		if (lc == '*' && c == '/')
-			eoc = true;
+			seen_end_of_comment = true;
 	}
 }
 
-/*
- * Handle // style comments
- */
 void
 lex_slash_slash_comment(void)
 {
@@ -1201,7 +1182,7 @@ lex_slash_slash_comment(void)
 		/* %s does not support // comments */
 		gnuism(312, allow_c90 ? "C90" : "traditional C");
 
-	while ((c = inpc()) != EOF && c != '\n')
+	while ((c = read_byte()) != EOF && c != '\n')
 		continue;
 }
 
@@ -1221,18 +1202,12 @@ clear_warn_flags(void)
 	constcond_flag = false;
 }
 
-/*
- * Strings are stored in a dynamically allocated buffer and passed
- * in yylval.y_string to the parser. The parser or the routines called
- * by the parser are responsible for freeing this buffer.
- */
 int
 lex_string(void)
 {
 	unsigned char *s;
 	int	c;
 	size_t	len, max;
-	strg_t	*strg;
 
 	s = xmalloc(max = 64);
 
@@ -1248,7 +1223,7 @@ lex_string(void)
 		/* unterminated string constant */
 		error(258);
 
-	strg = xcalloc(1, sizeof(*strg));
+	strg_t *strg = xcalloc(1, sizeof(*strg));
 	strg->st_char = true;
 	strg->st_len = len;
 	strg->st_mem = s;
@@ -1260,15 +1235,10 @@ lex_string(void)
 int
 lex_wide_string(void)
 {
-	char	*s;
 	int	c, n;
-	size_t	i, wi;
-	size_t	len, max, wlen;
-	wchar_t	*ws;
-	strg_t	*strg;
 
-	s = xmalloc(max = 64);
-	len = 0;
+	size_t len = 0, max = 64;
+	char *s = xmalloc(max);
 	while ((c = get_escaped_char('"')) >= 0) {
 		/* +1 to save space for a trailing NUL character */
 		if (len + 1 >= max)
@@ -1282,7 +1252,8 @@ lex_wide_string(void)
 
 	/* get length of wide-character string */
 	(void)mblen(NULL, 0);
-	for (i = 0, wlen = 0; i < len; i += n, wlen++) {
+	size_t wlen = 0;
+	for (size_t i = 0; i < len; i += n, wlen++) {
 		if ((n = mblen(&s[i], MB_CUR_MAX)) == -1) {
 			/* invalid multibyte character */
 			error(291);
@@ -1292,11 +1263,11 @@ lex_wide_string(void)
 			n = 1;
 	}
 
-	ws = xmalloc((wlen + 1) * sizeof(*ws));
-
+	wchar_t	*ws = xmalloc((wlen + 1) * sizeof(*ws));
+	size_t wi = 0;
 	/* convert from multibyte to wide char */
 	(void)mbtowc(NULL, NULL, 0);
-	for (i = 0, wi = 0; i < len; i += n, wi++) {
+	for (size_t i = 0; i < len; i += n, wi++) {
 		if ((n = mbtowc(&ws[wi], &s[i], MB_CUR_MAX)) == -1)
 			break;
 		if (n == 0)
@@ -1305,7 +1276,7 @@ lex_wide_string(void)
 	ws[wi] = 0;
 	free(s);
 
-	strg = xcalloc(1, sizeof(*strg));
+	strg_t *strg = xcalloc(1, sizeof(*strg));
 	strg->st_char = false;
 	strg->st_len = wlen;
 	strg->st_mem = ws;
@@ -1349,11 +1320,8 @@ lex_unknown_character(int c)
 sym_t *
 getsym(sbuf_t *sb)
 {
-	dinfo_t	*di;
-	char	*s;
-	sym_t	*sym;
 
-	sym = sb->sb_sym;
+	sym_t *sym = sb->sb_sym;
 
 	/*
 	 * During member declaration it is possible that name() looked
@@ -1363,7 +1331,7 @@ getsym(sbuf_t *sb)
 	 */
 	if (symtyp == FMEMBER || symtyp == FLABEL) {
 		if (sym == NULL || sym->s_kind == FVFT)
-			sym = symtab_search(sb);
+			sym = symtab_search(sb->sb_name);
 	}
 
 	if (sym != NULL) {
@@ -1376,9 +1344,10 @@ getsym(sbuf_t *sb)
 	/* create a new symbol table entry */
 
 	/* labels must always be allocated at level 1 (outermost block) */
+	dinfo_t	*di;
 	if (symtyp == FLABEL) {
 		sym = level_zero_alloc(1, sizeof(*sym));
-		s = level_zero_alloc(1, sb->sb_len + 1);
+		char *s = level_zero_alloc(1, sb->sb_len + 1);
 		(void)memcpy(s, sb->sb_name, sb->sb_len + 1);
 		sym->s_name = s;
 		sym->s_block_level = 1;
@@ -1412,8 +1381,8 @@ getsym(sbuf_t *sb)
 }
 
 /*
- * Construct a temporary symbol. The symbol name starts with a digit, making
- * the name illegal.
+ * Construct a temporary symbol. The symbol name starts with a digit to avoid
+ * name clashes with other identifiers.
  */
 sym_t *
 mktempsym(type_t *tp)
@@ -1479,9 +1448,7 @@ rmsyms(sym_t *syms)
 	}
 }
 
-/*
- * Put a symbol into the symbol table.
- */
+/* Put a symbol into the symbol table. */
 void
 inssym(int level, sym_t *sym)
 {
@@ -1496,26 +1463,20 @@ inssym(int level, sym_t *sym)
 	 * that these symbols are preferred over symbols from the outer
 	 * blocks that happen to have the same name.
 	 */
-	lint_assert(sym->s_symtab_next != NULL
-	    ? sym->s_block_level >= sym->s_symtab_next->s_block_level
-	    : true);
+	const sym_t *next = sym->s_symtab_next;
+	if (next != NULL)
+		lint_assert(sym->s_block_level >= next->s_block_level);
 }
 
-/*
- * Called at level 0 after syntax errors.
- *
- * Removes all symbols which are not declared at level 0 from the
- * symbol table. Also frees all memory which is not associated with
- * level 0.
- */
+/* Called at level 0 after syntax errors. */
 void
 clean_up_after_error(void)
 {
 
 	symtab_remove_locals();
 
-	for (size_t i = mem_block_level; i > 0; i--)
-		level_free_all(i);
+	while (mem_block_level > 0)
+		level_free_all(mem_block_level--);
 }
 
 /* Create a new symbol with the same name as an existing symbol. */

@@ -1,5 +1,5 @@
 %{
-/* $NetBSD: cgram.y,v 1.424 2022/10/01 09:42:40 rillig Exp $ */
+/* $NetBSD: cgram.y,v 1.432 2023/01/29 18:13:56 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -35,7 +35,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID)
-__RCSID("$NetBSD: cgram.y,v 1.424 2022/10/01 09:42:40 rillig Exp $");
+__RCSID("$NetBSD: cgram.y,v 1.432 2023/01/29 18:13:56 rillig Exp $");
 #endif
 
 #include <limits.h>
@@ -143,7 +143,7 @@ is_either(const char *s, const char *a, const char *b)
 
 %}
 
-%expect 129
+%expect 131
 
 %union {
 	val_t	*y_val;
@@ -208,6 +208,7 @@ is_either(const char *s, const char *a, const char *b)
 
 /* qualifiers (const, volatile, restrict, _Thread_local) */
 %token	<y_tqual>	T_QUAL
+%token	<y_tqual>	T_ATOMIC
 
 /* struct or union */
 %token	<y_tspec>	T_STRUCT_OR_UNION
@@ -276,6 +277,7 @@ is_either(const char *s, const char *a, const char *b)
 %type	<y_type>	begin_type_typespec
 %type	<y_type>	type_specifier
 %type	<y_type>	notype_type_specifier
+%type	<y_type>	atomic_type_specifier
 %type	<y_type>	struct_or_union_specifier
 %type	<y_tspec>	struct_or_union
 %type	<y_sym>		braced_struct_declaration_list
@@ -291,11 +293,12 @@ is_either(const char *s, const char *a, const char *b)
 %type	<y_sym>		enums_with_opt_comma
 %type	<y_sym>		enumerator_list
 %type	<y_sym>		enumerator
-%type	<y_qual_ptr>	type_qualifier
+%type	<y_tqual>	type_qualifier
 %type	<y_qual_ptr>	pointer
 %type	<y_qual_ptr>	asterisk
 %type	<y_qual_ptr>	type_qualifier_list_opt
 %type	<y_qual_ptr>	type_qualifier_list
+%type	<y_qual_ptr>	type_qualifier_list_elem
 %type	<y_sym>		notype_declarator
 %type	<y_sym>		type_declarator
 %type	<y_sym>		notype_direct_declarator
@@ -743,7 +746,7 @@ begin_type_declaration_specifiers:	/* see C99 6.7 */
 	;
 
 begin_type_declmods:		/* see C99 6.7 */
-	  begin_type T_QUAL {
+	  begin_type type_qualifier {
 		dcs_add_qualifier($2);
 	  }
 	| begin_type T_SCLASS {
@@ -764,7 +767,7 @@ begin_type_specifier_qualifier_list_postfix:
 	| begin_type_qualifier_list type_specifier {
 		dcs_add_type($2);
 	  }
-	| begin_type_specifier_qualifier_list_postfix T_QUAL {
+	| begin_type_specifier_qualifier_list_postfix type_qualifier {
 		dcs_add_qualifier($2);
 	  }
 	| begin_type_specifier_qualifier_list_postfix notype_type_specifier {
@@ -783,16 +786,16 @@ begin_type_typespec:
 	;
 
 begin_type_qualifier_list:
-	  begin_type T_QUAL {
+	  begin_type type_qualifier {
 		dcs_add_qualifier($2);
 	  }
-	| begin_type_qualifier_list T_QUAL {
+	| begin_type_qualifier_list type_qualifier {
 		dcs_add_qualifier($2);
 	  }
 	;
 
 declmod:
-	  T_QUAL {
+	  type_qualifier {
 		dcs_add_qualifier($1);
 	  }
 	| T_SCLASS {
@@ -850,9 +853,10 @@ notype_type_specifier:		/* see C99 6.7.2 */
 		$$ = gettyp($1);
 	  }
 	| T_TYPEOF T_LPAREN expression T_RPAREN {	/* GCC extension */
-		$$ = block_dup_type($3->tn_type);
+		$$ = $3 != NULL ? block_dup_type($3->tn_type) : gettyp(INT);
 		$$->t_typeof = true;
 	  }
+	| atomic_type_specifier
 	| struct_or_union_specifier {
 		end_declaration_level();
 		$$ = $1;
@@ -860,6 +864,13 @@ notype_type_specifier:		/* see C99 6.7.2 */
 	| enum_specifier {
 		end_declaration_level();
 		$$ = $1;
+	  }
+	;
+
+/* K&R ---, C90 ---, C99 ---, C11 6.7.2.4 */
+atomic_type_specifier:
+	  atomic T_LPAREN type_name T_RPAREN {
+		$$ = $3;
 	  }
 	;
 
@@ -893,7 +904,9 @@ struct_or_union_specifier:	/* C99 6.7.2.1 */
 struct_or_union:		/* C99 6.7.2.1 */
 	  T_STRUCT_OR_UNION {
 		symtyp = FTAG;
-		begin_declaration_level($1 == STRUCT ? DK_MOS : DK_MOU);
+		begin_declaration_level($1 == STRUCT
+		    ? DK_STRUCT_MEMBER
+		    : DK_UNION_MEMBER);
 		dcs->d_offset_in_bits = 0;
 		dcs->d_sou_align_in_bits = CHAR_SIZE;
 		$$ = $1;
@@ -1043,7 +1056,7 @@ enum_specifier:			/* C99 6.7.2.2 */
 enum:				/* helper for C99 6.7.2.2 */
 	  T_ENUM {
 		symtyp = FTAG;
-		begin_declaration_level(DK_ENUM_CONST);
+		begin_declaration_level(DK_ENUM_CONSTANT);
 	  }
 	;
 
@@ -1096,12 +1109,18 @@ enumerator:			/* C99 6.7.2.2 */
 	;
 
 type_qualifier:			/* C99 6.7.3 */
-	  T_QUAL {
-		$$ = xcalloc(1, sizeof(*$$));
-		if ($1 == CONST)
-			$$->p_const = true;
-		if ($1 == VOLATILE)
-			$$->p_volatile = true;
+	  T_QUAL
+	| atomic {
+		$$ = ATOMIC;
+	  }
+	;
+
+atomic:				/* helper */
+	  T_ATOMIC {
+		/* TODO: First fix c11ism, then use it here. */
+		if (!allow_c11)
+			/* '_Atomic' requires C11 or later */
+			error(350);
 	  }
 	;
 
@@ -1130,9 +1149,19 @@ type_qualifier_list_opt:	/* see C99 6.7.5 */
 	;
 
 type_qualifier_list:		/* C99 6.7.5 */
-	  type_qualifier
-	| type_qualifier_list type_qualifier {
+	  type_qualifier_list_elem
+	| type_qualifier_list type_qualifier_list_elem {
 		$$ = merge_qualified_pointer($1, $2);
+	  }
+	;
+
+type_qualifier_list_elem:	/* helper for 'pointer' */
+	type_qualifier {
+		$$ = xcalloc(1, sizeof(*$$));
+		if ($1 == CONST)
+			$$->p_const = true;
+		if ($1 == VOLATILE)
+			$$->p_volatile = true;
 	  }
 	;
 
@@ -1327,7 +1356,7 @@ array_size:
 		c11ism(343);
 		$$ = $3;
 	  }
-	| T_QUAL {
+	| type_qualifier {
 		/* C11 6.7.6.2 */
 		if ($1 != RESTRICT)
 			yyerror("Bad attribute");
@@ -1854,7 +1883,7 @@ asm_statement:			/* GCC extension */
 	  T_ASM T_LPAREN read_until_rparen T_SEMI {
 		dcs_set_asm();
 	  }
-	| T_ASM T_QUAL T_LPAREN read_until_rparen T_SEMI {
+	| T_ASM type_qualifier T_LPAREN read_until_rparen T_SEMI {
 		dcs_set_asm();
 	  }
 	| T_ASM error
@@ -1937,7 +1966,7 @@ function_definition:		/* C99 6.9.1 */
 			error(64);
 			YYERROR;
 		}
-		funcdef($1);
+		begin_function($1);
 		block_level++;
 		begin_declaration_level(DK_OLD_STYLE_ARG);
 		if (lwarn == LWARN_NONE)
@@ -1949,7 +1978,7 @@ function_definition:		/* C99 6.9.1 */
 		check_func_old_style_arguments();
 		begin_control_statement(CS_FUNCTION_BODY);
 	  } compound_statement {
-		funcend();
+		end_function();
 		end_control_statement(CS_FUNCTION_BODY);
 	  }
 	;
@@ -2055,7 +2084,7 @@ gcc_attribute:
 	}
 	| T_NAME T_LPAREN T_RPAREN
 	| T_NAME T_LPAREN gcc_attribute_parameters T_RPAREN
-	| T_QUAL {
+	| type_qualifier {
 		if ($1 != CONST)
 			yyerror("Bad attribute");
 	  }
@@ -2144,12 +2173,11 @@ read_until_rparen(void)
 	freeyyv(&yylval, yychar);
 
 	level = 1;
-	while (yychar != T_RPAREN || --level > 0) {
-		if (yychar == T_LPAREN) {
+	while (yychar > 0) {
+		if (yychar == T_LPAREN)
 			level++;
-		} else if (yychar <= 0) {
+		if (yychar == T_RPAREN && --level == 0)
 			break;
-		}
 		freeyyv(&yylval, yychar = yylex());
 	}
 
